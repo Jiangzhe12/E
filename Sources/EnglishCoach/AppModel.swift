@@ -1,0 +1,1512 @@
+import AppKit
+import Foundation
+
+@MainActor
+final class AppModel: ObservableObject {
+    @Published var statusMessage: String = "在任意应用中连续按两次复制（⌘C, ⌘C）即可翻译"
+    @Published var latestResult: TranslationResult?
+    @Published var history: [LookupHistoryItem] = []
+    @Published var searchText: String = ""
+    @Published var manualInput: String = ""
+    @Published var isTranslating: Bool = false
+    @Published var hasAccessibilityPermission: Bool = false
+    @Published var hotkeyStatus: HotkeyStatus = .registered
+
+    @Published var selectedTopic: InterestTopic = .movies
+    @Published var currentLesson: InterestLesson = AppModel.makeLesson(topic: .movies, seed: 0)
+    @Published var currentLessonIsReview: Bool = false
+    @Published var isCurrentTopicExhausted: Bool = false
+    @Published var lessonSelectedOptionIndex: Int?
+    @Published var lessonFeedbackMessage: String = "选择你感兴趣的主题，开始今天的兴趣学习。"
+    @Published var completedLearningCards: Int = 0
+    @Published var learningStreakDays: Int = 0
+    @Published var hasCompletedLearningToday: Bool = false
+    @Published var learningAttempts: [LearningAttemptRecord] = []
+
+    @Published var dailyWordCards: [DesktopWordCard] = []
+    @Published var currentDailyWordIndex: Int = 0
+    @Published var todayWordDeckCount: Int = 0
+    @Published var todayMasteredWordCount: Int = 0
+    @Published var totalMasteredWordCount: Int = 0
+    @Published var allMasteredWords: [String] = []
+    @Published var todayReviewCount: Int = 0
+
+    @Published var translationPresentationMode: TranslationPresentation = .floating {
+        didSet {
+            guard oldValue != translationPresentationMode else { return }
+            defaults.set(translationPresentationMode.rawValue, forKey: Self.translationPresentationModeKey)
+        }
+    }
+    @Published var manualDirectionChoice: TranslationDirectionChoice = .auto
+    @Published var historyTimeFilter: HistoryTimeFilter = .all
+    @Published var reminderEnabled: Bool = false
+    @Published var reminderTime: Date = AppModel.defaultReminderTime()
+    /// True when the most recent translation request didn't produce a real
+    /// answer (online unavailable + no local dictionary entry, or the call
+    /// threw). The status card surfaces a "重试" button while this is true.
+    @Published private(set) var pendingRetry: Bool = false
+
+    private let hotkeyManager: GlobalHotkeyManager
+    private let selectedTextService: SelectedTextService
+    private let translationService: TranslationService
+    private let historyStore: HistoryStore?
+    private let defaults: UserDefaults
+    private let wordCarouselStore: WordCarouselStore
+    private let calendar = Calendar.current
+    private let popoverController = TranslationPopoverController()
+    private let reminderScheduler = ReminderScheduler()
+    private let speechService = SpeechService()
+    private let servicesProvider = ServicesProvider()
+
+    private var lessonSeedOffset: Int = 0
+    private var lastCompletedLearningDate: Date?
+    private var lessonProgressStates: [String: LessonProgressState] = [:]
+    private var wordDefinitionCache: [String: TranslationResult] = [:]
+    private var loadingWordDefinitions: Set<String> = []
+    private var lastFailedRequest: PendingRetryRequest?
+
+    /// Captured payload of the most recent failing translation, kept so the
+    /// "重试" button can replay the exact same call (text + source + where to
+    /// surface the result).
+    private struct PendingRetryRequest {
+        let text: String
+        let sourceApp: String?
+        let presentation: PresentationTarget
+        let direction: TranslationDirection?
+    }
+
+    private static let completedCardsKey = "learning.completedCards"
+    private static let learningStreakDaysKey = "learning.streakDays"
+    private static let lastCompletedDateKey = "learning.lastCompletedDate"
+    private static let learningAttemptsKey = "learning.attempts.v1"
+    private static let lessonProgressStatesKey = "learning.lessonProgressStates.v1"
+    private static let translationPresentationModeKey = "translation.presentationMode"
+    private static let reminderEnabledKey = "reminder.enabled"
+    private static let reminderHourKey = "reminder.hour"
+    private static let reminderMinuteKey = "reminder.minute"
+
+    private struct LessonProgressState: Codable {
+        var topicRawValue: String
+        var lessonTitle: String
+        var question: String
+        var hasWrongAttempt: Bool
+        var isMastered: Bool
+        var attempts: Int
+        var lastAttemptAt: Date
+    }
+
+    init(
+        hotkeyManager: GlobalHotkeyManager = GlobalHotkeyManager(),
+        selectedTextService: SelectedTextService = SelectedTextService(),
+        translationService: TranslationService = TranslationService(enableOnlineFallback: true),
+        defaults: UserDefaults = .standard
+    ) {
+        self.hotkeyManager = hotkeyManager
+        self.selectedTextService = selectedTextService
+        self.translationService = translationService
+        self.defaults = defaults
+        self.wordCarouselStore = WordCarouselStore(
+            defaults: defaults,
+            coreWords: CommonWordBank.coreWords,
+            extendedWords: CommonWordBank.extendedWords,
+            dailyQuota: 20
+        )
+
+        hotkeyManager.setDoubleCopyInterval(0.8)
+
+        do {
+            historyStore = try HistoryStore()
+        } catch {
+            historyStore = nil
+            statusMessage = "数据库初始化失败：\(error.localizedDescription)"
+        }
+
+        hasAccessibilityPermission = selectedTextService.isAccessibilityTrusted()
+
+        if let raw = defaults.string(forKey: Self.translationPresentationModeKey),
+           let mode = TranslationPresentation(rawValue: raw) {
+            self.translationPresentationMode = mode
+        }
+
+        self.reminderEnabled = defaults.bool(forKey: Self.reminderEnabledKey)
+        if defaults.object(forKey: Self.reminderHourKey) != nil {
+            let hour = defaults.integer(forKey: Self.reminderHourKey)
+            let minute = defaults.integer(forKey: Self.reminderMinuteKey)
+            self.reminderTime = Self.makeReminderTime(hour: hour, minute: minute)
+        }
+
+        self.popoverController.onOpenMainWindow = { [weak self] in
+            self?.openMainWindow()
+        }
+
+        self.hotkeyManager.onHotKeyPressed = { [weak self] in
+            guard let self else { return }
+            Task {
+                await self.handleHotkeyTriggeredTranslation()
+            }
+        }
+
+        self.hotkeyManager.onQuickTranslatePressed = { [weak self] in
+            guard let self else { return }
+            let position = self.bestPopoverPosition()
+            self.popoverController.presentQuickTranslate(model: self, near: position)
+        }
+
+        do {
+            try hotkeyManager.registerDefaultShortcut()
+            hotkeyStatus = .registered
+        } catch {
+            hotkeyStatus = .failed(error.localizedDescription)
+            statusMessage = error.localizedDescription
+        }
+
+        // Register as the macOS Services provider so the system's Services menu
+        // can call into us. `NSUpdateDynamicServices` nudges the system to
+        // re-scan the Info.plist entries for this bundle so a fresh build
+        // doesn't need a logout to show up in the Services menu.
+        servicesProvider.appModel = self
+        NSApp.servicesProvider = servicesProvider
+        NSUpdateDynamicServices()
+
+        loadLearningProgress()
+        refreshLessonForSelectedTopic()
+        refreshWordCarouselIfNeeded()
+
+        Task {
+            await refreshHistory()
+        }
+
+        if reminderEnabled {
+            let components = calendar.dateComponents([.hour, .minute], from: reminderTime)
+            let hour = components.hour ?? 20
+            let minute = components.minute ?? 0
+            reminderScheduler.schedule(hour: hour, minute: minute)
+            if hasCompletedLearningToday {
+                reminderScheduler.suppressForToday(hour: hour, minute: minute)
+            }
+        }
+    }
+
+    var filteredHistory: [LookupHistoryItem] {
+        let timeFiltered: [LookupHistoryItem]
+        switch historyTimeFilter {
+        case .all:
+            timeFiltered = history
+        case .today:
+            timeFiltered = history.filter { calendar.isDateInToday($0.createdAt) }
+        case .thisWeek:
+            let now = Date()
+            guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start else {
+                timeFiltered = history
+                break
+            }
+            timeFiltered = history.filter { $0.createdAt >= weekStart }
+        }
+
+        let query = searchText.normalizedForLookup
+        guard !query.isEmpty else { return timeFiltered }
+        return timeFiltered.filter { item in
+            item.normalizedText.contains(query)
+                || item.translation.lowercased().contains(query)
+                || (item.sourceApp?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    var todayTranslationCount: Int {
+        todayTranslationItems.count
+    }
+
+    var todayTranslationItems: [LookupHistoryItem] {
+        history.filter { calendar.isDateInToday($0.createdAt) }
+    }
+
+    var todayLearningAttemptCount: Int {
+        learningAttempts.filter { calendar.isDateInToday($0.createdAt) }.count
+    }
+
+    var todayLearningCorrectCount: Int {
+        learningAttempts.filter { attempt in
+            attempt.isCorrect && calendar.isDateInToday(attempt.createdAt)
+        }.count
+    }
+
+    var todayLearningWrongCount: Int {
+        learningAttempts.filter { attempt in
+            !attempt.isCorrect && calendar.isDateInToday(attempt.createdAt)
+        }.count
+    }
+
+    var selectedTopicLearningRecords: [LearningAttemptRecord] {
+        var latestByTemplate: [String: LearningAttemptRecord] = [:]
+        for record in learningAttempts where record.topicRawValue == selectedTopic.rawValue {
+            if let existing = latestByTemplate[record.lessonTemplateID] {
+                if record.createdAt > existing.createdAt {
+                    latestByTemplate[record.lessonTemplateID] = record
+                }
+            } else {
+                latestByTemplate[record.lessonTemplateID] = record
+            }
+        }
+
+        return latestByTemplate.values.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    var currentDailyWordCard: DesktopWordCard? {
+        guard !dailyWordCards.isEmpty else { return nil }
+        if dailyWordCards.indices.contains(currentDailyWordIndex) {
+            return dailyWordCards[currentDailyWordIndex]
+        }
+        return dailyWordCards.first
+    }
+
+    var dailyWordProgressText: String {
+        guard !dailyWordCards.isEmpty else { return "今日暂无可学习单词" }
+        let shownIndex = min(currentDailyWordIndex, dailyWordCards.count - 1) + 1
+        let base = "今日单词 \(shownIndex)/\(dailyWordCards.count)"
+        if todayReviewCount > 0 {
+            return "\(base) · 复习 \(todayReviewCount)"
+        }
+        return base
+    }
+
+    /// Aggregate activity events per calendar day, keyed by `yyyy-MM-dd`.
+    /// Combines translations, interest learning attempts, and newly mastered
+    /// words into a single count so the heatmap can color one cell per day.
+    var dailyActivityCounts: [String: Int] {
+        var counts: [String: Int] = [:]
+        for item in history {
+            counts[Self.dayKey(for: item.createdAt, calendar: calendar), default: 0] += 1
+        }
+        for attempt in learningAttempts {
+            counts[Self.dayKey(for: attempt.createdAt, calendar: calendar), default: 0] += 1
+        }
+        for date in wordCarouselStore.masteryDates() {
+            counts[Self.dayKey(for: date, calendar: calendar), default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func dayKey(for date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d",
+            components.year ?? 1970,
+            components.month ?? 1,
+            components.day ?? 1
+        )
+    }
+
+    /// Consecutive days of learning activity ending at today (or yesterday if
+    /// today has no activity yet — we don't want to show "streak broken" at
+    /// 8am just because the day just started).
+    var currentStreakDays: Int {
+        let counts = dailyActivityCounts
+        let now = Date()
+        let todayKey = Self.dayKey(for: now, calendar: calendar)
+
+        // Anchor: today if today already has activity, otherwise yesterday —
+        // so an unfinished today doesn't zero out the streak visually.
+        var cursor: Date
+        if (counts[todayKey] ?? 0) > 0 {
+            cursor = calendar.startOfDay(for: now)
+        } else {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else {
+                return 0
+            }
+            cursor = calendar.startOfDay(for: yesterday)
+        }
+
+        var streak = 0
+        while true {
+            let key = Self.dayKey(for: cursor, calendar: calendar)
+            guard (counts[key] ?? 0) > 0 else { break }
+            streak += 1
+            guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = prev
+            // Hard cap to avoid any pathological data sending us into an
+            // infinite loop; real streaks are never multi-year on a personal app.
+            if streak >= 3650 { break }
+        }
+        return streak
+    }
+
+    /// How many actionable items the user still has today: review-due words
+    /// that haven't been answered yet + new words that haven't been marked
+    /// mastered yet. This drives the Dock badge.
+    var pendingLearningTaskCount: Int {
+        let unmasteredToday = max(0, todayWordDeckCount - todayMasteredWordCount)
+        return todayReviewCount + unmasteredToday
+    }
+
+    /// Apply `pendingLearningTaskCount` to the Dock tile. Empty string removes
+    /// the badge so the icon looks clean when there's nothing to do.
+    func refreshDockBadge() {
+        let count = pendingLearningTaskCount
+        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+    }
+
+    var wordBankScaleDescription: String {
+        let core = CommonWordBank.coreWords.count
+        let extended = CommonWordBank.extendedWords.count
+        if CommonWordBank.extendedWordsSourceAvailable {
+            return "词库规模：\(core + extended) 词（核心 \(core) + 扩展 \(extended)）"
+        } else {
+            return "词库规模：\(core) 词（仅核心；扩展词库来源 /usr/share/dict/web2 不可用）"
+        }
+    }
+
+    func refreshWordCarouselIfNeeded() {
+        let snapshot = wordCarouselStore.snapshot()
+        todayWordDeckCount = snapshot.todayWords.count
+        todayMasteredWordCount = snapshot.todayMasteredCount
+        totalMasteredWordCount = snapshot.totalMasteredCount
+        allMasteredWords = snapshot.masteredWords.sorted()
+        todayReviewCount = snapshot.reviewDueWords.count
+
+        // Combine review-due words (front) with fresh today words. They can't
+        // overlap by construction (review pool is mastered, today pool excludes
+        // mastered), but dedup defensively to survive any storage drift.
+        var seen: Set<String> = []
+        var combined: [(word: String, isReview: Bool)] = []
+        for word in snapshot.reviewDueWords where seen.insert(word).inserted {
+            combined.append((word, true))
+        }
+        for word in snapshot.todayWords where seen.insert(word).inserted {
+            combined.append((word, false))
+        }
+
+        let previousWord = currentDailyWordCard?.word
+        dailyWordCards = combined.map { entry in
+            var card = DesktopWordCard(
+                word: entry.word,
+                meaning: "正在加载词义...",
+                phonetic: nil,
+                explanation: "常用词，加载释义中",
+                example: CommonWordBank.exampleSentence(for: entry.word),
+                provider: "Word Bank",
+                isMastered: snapshot.masteredWords.contains(entry.word),
+                isReview: entry.isReview
+            )
+
+            if let cached = wordDefinitionCache[entry.word] {
+                Self.applyDefinition(cached, to: &card)
+            }
+
+            return card
+        }
+
+        if let previousWord,
+           let index = dailyWordCards.firstIndex(where: { $0.word == previousWord }) {
+            currentDailyWordIndex = index
+        } else if dailyWordCards.isEmpty {
+            currentDailyWordIndex = 0
+        } else {
+            currentDailyWordIndex = min(currentDailyWordIndex, dailyWordCards.count - 1)
+        }
+
+        for entry in combined {
+            loadWordDefinitionIfNeeded(for: entry.word)
+        }
+
+        refreshDockBadge()
+    }
+
+    func showNextDailyWord() {
+        guard !dailyWordCards.isEmpty else { return }
+        currentDailyWordIndex = (currentDailyWordIndex + 1) % dailyWordCards.count
+    }
+
+    func showPreviousDailyWord() {
+        guard !dailyWordCards.isEmpty else { return }
+        currentDailyWordIndex = (currentDailyWordIndex - 1 + dailyWordCards.count) % dailyWordCards.count
+    }
+
+    func markCurrentWordAsMastered() {
+        guard let card = currentDailyWordCard else { return }
+        guard !card.isReview else { return }
+        guard !card.isMastered else { return }
+
+        wordCarouselStore.markMastered(word: card.word)
+        refreshWordCarouselIfNeeded()
+        statusMessage = "已标记熟悉：\(card.word)，明天会安排第一次复习"
+    }
+
+    func rememberCurrentWord() {
+        guard let card = currentDailyWordCard else { return }
+        guard card.isReview else { return }
+
+        wordCarouselStore.advanceReview(word: card.word)
+        refreshWordCarouselIfNeeded()
+
+        if let days = wordCarouselStore.daysUntilNextReview(for: card.word) {
+            statusMessage = days <= 0
+                ? "继续保持：\(card.word)，今天稍后再复习一次"
+                : "继续保持：\(card.word)，下次复习在 \(days) 天后"
+        } else {
+            statusMessage = "继续保持：\(card.word)，已毕业，不再安排复习"
+        }
+    }
+
+    func forgotCurrentWord() {
+        guard let card = currentDailyWordCard else { return }
+        guard card.isReview else { return }
+
+        wordCarouselStore.resetReview(word: card.word)
+        refreshWordCarouselIfNeeded()
+        statusMessage = "重置进度：\(card.word)，明天再复习一次"
+    }
+
+    func unmarkMasteredWord(_ word: String) {
+        wordCarouselStore.unmarkMastered(word: word)
+        refreshWordCarouselIfNeeded()
+        statusMessage = "已取消熟悉：\(word)，会重新进入后续学习"
+    }
+
+    /// Read text aloud via the shared SpeechService. Used by the speaker
+    /// buttons on the daily word card and the translation result card.
+    func speak(_ text: String) {
+        speechService.speak(text)
+    }
+
+    func requestAccessibilityPermission() {
+        let granted = selectedTextService.requestAccessibilityPermission()
+        let wasGranted = hasAccessibilityPermission
+        hasAccessibilityPermission = granted
+        if granted {
+            statusMessage = "辅助功能权限已就绪"
+            if !wasGranted {
+                hotkeyManager.reRegisterIfNeeded()
+            }
+        } else {
+            statusMessage = "请在 系统设置 -> 隐私与安全性 -> 辅助功能 中允许本应用（若已允许，请返回本应用稍等一下）"
+        }
+    }
+
+    func translateFromManualInput() {
+        let text = manualInput.trimmed
+        guard !text.isEmpty else {
+            statusMessage = "请输入要翻译的内容"
+            return
+        }
+        let direction = manualDirectionChoice.concreteDirection
+
+        Task {
+            await translateAndRecord(text: text, sourceApp: "Manual Input", presentation: .none, direction: direction)
+        }
+    }
+
+    func translateManualText(_ text: String) async {
+        let trimmed = text.trimmed
+        guard !trimmed.isEmpty else {
+            statusMessage = "请输入要翻译的英文内容"
+            return
+        }
+        await translateAndRecord(text: trimmed, sourceApp: "Menubar", presentation: .none)
+    }
+
+    func showHistoryItem(_ item: LookupHistoryItem) {
+        latestResult = TranslationResult(
+            originalText: item.rawText,
+            translatedText: item.translation,
+            phonetic: item.phonetic,
+            explanations: item.explanations,
+            provider: "History",
+            direction: TranslationService.detectDirection(item.rawText)
+        )
+        statusMessage = "已加载历史记录：\(item.rawText)"
+    }
+
+    func translateSelectionNow() {
+        Task {
+            await handleHotkeyTriggeredTranslation()
+        }
+    }
+
+    /// Called from `ServicesProvider` when the user picks "用 EnglishCoach 翻译"
+    /// in the system Services menu. The source app is hard to identify from
+    /// outside the process, so we tag it generically as "Services 菜单".
+    func translateFromServicesMenu(text: String) {
+        NSApp.setActivationPolicy(.regular)
+        let presentation = translationPresentationMode
+        Task { @MainActor in
+            await translateAndRecord(
+                text: text,
+                sourceApp: "Services 菜单",
+                presentation: presentation
+            )
+        }
+    }
+
+    /// Used by `QuickTranslatePopoverView` — translates, records history, and
+    /// returns the result so the panel can display it inline. Does not route
+    /// through `PresentationTarget` because the panel manages its own result UI.
+    func translateForQuickPanel(_ text: String, direction: TranslationDirection? = nil) async -> TranslationResult? {
+        let cleaned = text.trimmed
+        guard !cleaned.isEmpty else { return nil }
+        guard cleaned.count <= 500 else {
+            statusMessage = "一次最多翻译 500 个字符"
+            return nil
+        }
+        do {
+            let outcome = try await translationService.translate(cleaned, direction: direction)
+            if let historyStore {
+                try historyStore.insertLookup(
+                    rawText: cleaned,
+                    sourceApp: "Quick Translate",
+                    result: outcome.result
+                )
+                history = try historyStore.fetchRecent(limit: 300)
+            }
+            latestResult = outcome.result
+            return outcome.result
+        } catch {
+            statusMessage = "翻译失败：\(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    func refreshPermissionStatus() {
+        let granted = selectedTextService.isAccessibilityTrusted()
+        let wasGranted = hasAccessibilityPermission
+        hasAccessibilityPermission = granted
+        if granted && !wasGranted {
+            hotkeyManager.reRegisterIfNeeded()
+        }
+    }
+
+    func refreshHistory() async {
+        guard let historyStore else { return }
+        do {
+            history = try historyStore.fetchRecent(limit: 300)
+        } catch {
+            statusMessage = "读取历史失败：\(error.localizedDescription)"
+        }
+    }
+
+    func deleteHistory(ids: [Int64]) {
+        guard !ids.isEmpty else { return }
+        guard let historyStore else { return }
+
+        do {
+            try historyStore.deleteHistory(ids: ids)
+            history = try historyStore.fetchRecent(limit: 300)
+            statusMessage = "已删除 \(ids.count) 条记录"
+        } catch {
+            statusMessage = "删除记录失败：\(error.localizedDescription)"
+        }
+    }
+
+    func selectInterestTopic(_ topic: InterestTopic) {
+        guard selectedTopic != topic else { return }
+        selectedTopic = topic
+        lessonSeedOffset = 0
+        refreshLessonForSelectedTopic()
+        statusMessage = "已切换到 \(topic.title) 学习流"
+    }
+
+    func refreshCurrentLesson() {
+        let totalTemplates = (Self.lessonTemplates[selectedTopic]?.count ?? 0)
+        let wrap = max(totalTemplates, 1)
+        lessonSeedOffset = (lessonSeedOffset &+ 1) % wrap
+        refreshLessonForSelectedTopic()
+        statusMessage = isCurrentTopicExhausted
+            ? "当前主题题目已全部答对，可切换主题继续学习"
+            : "已生成新的 \(selectedTopic.title) 内容"
+    }
+
+    func chooseLessonOption(_ optionIndex: Int) {
+        lessonSelectedOptionIndex = optionIndex
+    }
+
+    func submitLessonAnswer() {
+        guard let lessonSelectedOptionIndex else {
+            lessonFeedbackMessage = "先选择一个答案再提交。"
+            return
+        }
+
+        let isCorrect = lessonSelectedOptionIndex == currentLesson.answerIndex
+        recordLessonAttempt(selectedOptionIndex: lessonSelectedOptionIndex, isCorrect: isCorrect)
+
+        if isCorrect {
+            registerLessonCompletion()
+            lessonFeedbackMessage = "回答正确。\(currentLesson.explanation)"
+        } else {
+            let correct = currentLesson.options[currentLesson.answerIndex]
+            lessonFeedbackMessage = "还差一点。正确答案是：\(correct)。\(currentLesson.explanation)"
+        }
+    }
+
+    func refreshDailyCompletionState() {
+        if let lastCompletedLearningDate {
+            hasCompletedLearningToday = calendar.isDateInToday(lastCompletedLearningDate)
+        } else {
+            hasCompletedLearningToday = false
+        }
+        refreshWordCarouselIfNeeded()
+    }
+
+    /// Apply a change coming from the reminder settings UI.
+    func updateReminderSettings(enabled: Bool, time: Date) async {
+        reminderTime = time
+        let components = calendar.dateComponents([.hour, .minute], from: time)
+        let hour = components.hour ?? 20
+        let minute = components.minute ?? 0
+
+        defaults.set(hour, forKey: Self.reminderHourKey)
+        defaults.set(minute, forKey: Self.reminderMinuteKey)
+
+        if enabled {
+            let granted = await reminderScheduler.requestAuthorizationIfNeeded()
+            if granted {
+                reminderEnabled = true
+                defaults.set(true, forKey: Self.reminderEnabledKey)
+                reminderScheduler.schedule(hour: hour, minute: minute)
+                if hasCompletedLearningToday {
+                    reminderScheduler.suppressForToday(hour: hour, minute: minute)
+                }
+                statusMessage = "每日提醒已开启，时间 \(String(format: "%02d:%02d", hour, minute))"
+            } else {
+                reminderEnabled = false
+                defaults.set(false, forKey: Self.reminderEnabledKey)
+                statusMessage = "通知权限未授予，请在 系统设置 -> 通知 中允许 English Coach 发送通知"
+            }
+        } else {
+            reminderEnabled = false
+            defaults.set(false, forKey: Self.reminderEnabledKey)
+            reminderScheduler.cancel()
+            statusMessage = "已关闭每日提醒"
+        }
+    }
+
+    private static func defaultReminderTime() -> Date {
+        makeReminderTime(hour: 20, minute: 0)
+    }
+
+    private static func makeReminderTime(hour: Int, minute: Int) -> Date {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        return Calendar.current.date(from: components) ?? Date()
+    }
+
+    private func loadWordDefinitionIfNeeded(for word: String) {
+        if let cached = wordDefinitionCache[word] {
+            updateDailyWordCard(word: word, with: cached)
+            return
+        }
+
+        if loadingWordDefinitions.contains(word) {
+            return
+        }
+
+        loadingWordDefinitions.insert(word)
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.loadingWordDefinitions.remove(word)
+            }
+
+            do {
+                let outcome = try await self.translationService.translate(word)
+                self.wordDefinitionCache[word] = outcome.result
+                self.updateDailyWordCard(word: word, with: outcome.result)
+            } catch {
+                self.updateDailyWordCardAsFallback(word: word)
+            }
+        }
+    }
+
+    private func updateDailyWordCard(word: String, with definition: TranslationResult) {
+        guard let index = dailyWordCards.firstIndex(where: { $0.word == word }) else { return }
+        var card = dailyWordCards[index]
+        Self.applyDefinition(definition, to: &card)
+        dailyWordCards[index] = card
+    }
+
+    private func updateDailyWordCardAsFallback(word: String) {
+        guard let index = dailyWordCards.firstIndex(where: { $0.word == word }) else { return }
+        var card = dailyWordCards[index]
+        card.meaning = "暂时无法加载词义"
+        card.explanation = "网络异常时可稍后重试"
+        card.provider = "Fallback"
+        dailyWordCards[index] = card
+    }
+
+    private static func applyDefinition(_ definition: TranslationResult, to card: inout DesktopWordCard) {
+        card.meaning = definition.translatedText
+        card.phonetic = definition.phonetic
+        card.explanation = definition.explanations.first ?? "常用词，建议结合例句记忆"
+        card.provider = definition.provider
+    }
+
+    private func handleHotkeyTriggeredTranslation() async {
+        // Always make sure the app is running as a regular app so the menubar
+        // extra still responds and the popover panel can come to the front.
+        // Do NOT `.activate(ignoringOtherApps: true)` here — we want to avoid
+        // stealing focus when the user is in floating-popup mode.
+        NSApp.setActivationPolicy(.regular)
+
+        let presentation = translationPresentationMode
+
+        do {
+            hasAccessibilityPermission = selectedTextService.isAccessibilityTrusted()
+
+            if hasAccessibilityPermission {
+                let snapshot = try selectedTextService.fetchSelectedText()
+                await translateAndRecord(
+                    text: snapshot.text,
+                    sourceApp: snapshot.sourceAppName,
+                    presentation: presentation
+                )
+                return
+            }
+        } catch {
+            // 选中文本读取失败时自动回退到剪贴板
+        }
+
+        if let clipboardText = NSPasteboard.general.string(forType: .string),
+           !clipboardText.trimmed.isEmpty {
+            await translateAndRecord(
+                text: clipboardText,
+                sourceApp: "Clipboard",
+                presentation: presentation
+            )
+            statusMessage = hasAccessibilityPermission
+                ? "未读到选中文本，已回退使用剪贴板内容"
+                : "已使用剪贴板内容翻译（如需直接取选中文本，请授权辅助功能）"
+            return
+        }
+
+        statusMessage = "没有读取到选中文本，请先选中英文单词或句子"
+    }
+
+    private enum PresentationTarget {
+        case floating
+        case mainWindow
+        case none
+    }
+
+    private func translateAndRecord(
+        text: String,
+        sourceApp: String?,
+        presentation: PresentationTarget,
+        direction: TranslationDirection? = nil
+    ) async {
+        let cleanedText = text.trimmed
+        guard !cleanedText.isEmpty else {
+            statusMessage = "内容为空，无法翻译"
+            return
+        }
+
+        if cleanedText.count > 500 {
+            statusMessage = "一次最多翻译 500 个字符，再长建议分段"
+            return
+        }
+
+        isTranslating = true
+        defer { isTranslating = false }
+
+        do {
+            let outcome = try await translationService.translate(cleanedText, direction: direction)
+            latestResult = outcome.result
+
+            if let historyStore {
+                try historyStore.insertLookup(
+                    rawText: cleanedText,
+                    sourceApp: sourceApp,
+                    result: outcome.result
+                )
+                history = try historyStore.fetchRecent(limit: 300)
+            }
+
+            // Online down + local dict miss surfaces as a "Fallback" provider.
+            // Treat that as a retryable failure so the user can re-fire the
+            // same lookup once the network comes back.
+            let isFallbackOnly = outcome.result.provider.hasPrefix("Fallback")
+            if isFallbackOnly {
+                lastFailedRequest = PendingRetryRequest(
+                    text: cleanedText,
+                    sourceApp: sourceApp,
+                    presentation: presentation,
+                    direction: direction
+                )
+                pendingRetry = true
+            } else {
+                lastFailedRequest = nil
+                pendingRetry = false
+            }
+
+            if let notice = outcome.onlineNotice {
+                statusMessage = isFallbackOnly
+                    ? "\(notice) 网络恢复后可点 statusCard 的「重试」"
+                    : notice
+            } else if let sourceApp {
+                statusMessage = "已翻译并记录（来源：\(sourceApp)）"
+            } else {
+                statusMessage = "已翻译并记录"
+            }
+
+            switch presentation {
+            case .floating:
+                popoverController.present(result: outcome.result, sourceAppName: sourceApp, near: bestPopoverPosition())
+            case .mainWindow:
+                openMainWindow()
+            case .none:
+                break
+            }
+        } catch {
+            lastFailedRequest = PendingRetryRequest(
+                text: cleanedText,
+                sourceApp: sourceApp,
+                presentation: presentation,
+                direction: direction
+            )
+            pendingRetry = true
+            statusMessage = "翻译失败：\(error.localizedDescription) — 可点 statusCard 的「重试」"
+        }
+    }
+
+    /// Re-run the last failed translation request, preserving its source and
+    /// presentation target. No-op if there is nothing to retry.
+    func retryLastTranslation() async {
+        guard let request = lastFailedRequest else { return }
+        await translateAndRecord(
+            text: request.text,
+            sourceApp: request.sourceApp,
+            presentation: request.presentation,
+            direction: request.direction
+        )
+    }
+
+    /// Overload used by callers that already speak `TranslationPresentation`.
+    private func translateAndRecord(
+        text: String,
+        sourceApp: String?,
+        presentation: TranslationPresentation,
+        direction: TranslationDirection? = nil
+    ) async {
+        let target: PresentationTarget = presentation == .floating ? .floating : .mainWindow
+        await translateAndRecord(text: text, sourceApp: sourceApp, presentation: target, direction: direction)
+    }
+
+    private func openMainWindow() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let window = Self.primaryWindow() {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        // On first launch the SwiftUI WindowGroup may not have materialised a
+        // window yet. Retry after a short delay; if it still isn't there, the
+        // user can open it from the menu bar.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            if let window = Self.primaryWindow() {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    private static func primaryWindow() -> NSWindow? {
+        // MenuBarExtra popovers are NSWindows too; filter to windows that look
+        // like real document/content windows.
+        for window in NSApp.windows where window.canBecomeMain && window.title == "English Coach" {
+            return window
+        }
+        for window in NSApp.windows where window.canBecomeMain && !window.title.isEmpty {
+            return window
+        }
+        return nil
+    }
+
+    /// Best-effort screen position near the frontmost window's upper-center.
+    /// Uses `CGWindowListCopyWindowInfo` — no Accessibility permission needed.
+    static func frontmostWindowPosition() -> NSPoint? {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
+        let pid = frontApp.processIdentifier
+
+        guard let windowList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else { return nil }
+
+        // Find the first on-screen window belonging to the frontmost app.
+        guard let winInfo = windowList.first(where: {
+            ($0[kCGWindowOwnerPID as String] as? pid_t) == pid
+                && ($0[kCGWindowLayer as String] as? Int) == 0
+        }) else { return nil }
+
+        guard let bounds = winInfo[kCGWindowBounds as String] as? [String: CGFloat],
+              let x = bounds["X"], let y = bounds["Y"],
+              let w = bounds["Width"], let h = bounds["Height"],
+              w > 50, h > 50
+        else { return nil }
+
+        // CG coords (top-left origin) → AppKit (bottom-left origin).
+        let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+        // Return a point in the upper-third, horizontally centered.
+        return NSPoint(
+            x: x + w * 0.5,
+            y: screenHeight - (y + h * 0.3)
+        )
+    }
+
+    /// Determine the best screen position to show a floating panel, using a
+    /// three-tier fallback: text cursor → frontmost window → mouse pointer.
+    func bestPopoverPosition() -> NSPoint {
+        if let cursorPos = selectedTextService.focusedElementCursorPosition() {
+            return cursorPos
+        }
+        if let windowPos = Self.frontmostWindowPosition() {
+            return windowPos
+        }
+        return NSEvent.mouseLocation
+    }
+
+    private func refreshLessonForSelectedTopic() {
+        let templates = Self.lessonTemplates[selectedTopic] ?? [Self.fallbackTemplate(for: selectedTopic)]
+        let mastered = masteredTemplateIDs(for: selectedTopic)
+        var availableTemplates = templates.filter { !mastered.contains($0.id) }
+
+        if availableTemplates.isEmpty {
+            isCurrentTopicExhausted = true
+            availableTemplates = templates
+        } else {
+            isCurrentTopicExhausted = false
+        }
+
+        if availableTemplates.count > 1 {
+            let currentTemplate = currentLesson.templateID
+            availableTemplates.removeAll { $0.id == currentTemplate }
+            if availableTemplates.isEmpty {
+                availableTemplates = templates.filter { !mastered.contains($0.id) }
+            }
+            if availableTemplates.isEmpty {
+                availableTemplates = templates
+            }
+        }
+
+        let dayIndex = calendar.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        let index = abs(dayIndex + lessonSeedOffset) % availableTemplates.count
+        let selected = availableTemplates[index]
+
+        currentLesson = Self.makeLesson(topic: selectedTopic, template: selected)
+        currentLessonIsReview = isTemplateReviewCandidate(selected.id)
+        lessonSelectedOptionIndex = nil
+        lessonFeedbackMessage = isCurrentTopicExhausted
+            ? "当前主题题目已全部答对，可切换主题，或回顾下方已学题目。"
+            : "阅读短文后选一个答案，完成今天的 3 分钟学习。"
+    }
+
+    private func recordLessonAttempt(selectedOptionIndex: Int, isCorrect: Bool) {
+        let correctOption = currentLesson.options[currentLesson.answerIndex]
+        let selectedOption = currentLesson.options[selectedOptionIndex]
+        let now = Date()
+
+        let record = LearningAttemptRecord(
+            id: UUID(),
+            lessonTemplateID: currentLesson.templateID,
+            topicRawValue: currentLesson.topic.rawValue,
+            lessonTitle: currentLesson.title,
+            question: currentLesson.question,
+            selectedOption: selectedOption,
+            correctOption: correctOption,
+            isCorrect: isCorrect,
+            isReview: currentLessonIsReview,
+            createdAt: now
+        )
+
+        learningAttempts.insert(record, at: 0)
+        if learningAttempts.count > 600 {
+            learningAttempts.removeLast(learningAttempts.count - 600)
+        }
+
+        var state = lessonProgressStates[currentLesson.templateID] ?? LessonProgressState(
+            topicRawValue: currentLesson.topic.rawValue,
+            lessonTitle: currentLesson.title,
+            question: currentLesson.question,
+            hasWrongAttempt: false,
+            isMastered: false,
+            attempts: 0,
+            lastAttemptAt: now
+        )
+
+        state.topicRawValue = currentLesson.topic.rawValue
+        state.lessonTitle = currentLesson.title
+        state.question = currentLesson.question
+        state.attempts += 1
+        state.lastAttemptAt = now
+        if isCorrect {
+            state.isMastered = true
+        } else {
+            state.hasWrongAttempt = true
+        }
+
+        lessonProgressStates[currentLesson.templateID] = state
+        persistLearningProgress()
+    }
+
+    private func masteredTemplateIDs(for topic: InterestTopic) -> Set<String> {
+        let ids = lessonProgressStates.compactMap { templateID, state in
+            (state.topicRawValue == topic.rawValue && state.isMastered) ? templateID : nil
+        }
+        return Set(ids)
+    }
+
+    private func isTemplateReviewCandidate(_ templateID: String) -> Bool {
+        guard let state = lessonProgressStates[templateID] else {
+            return false
+        }
+        return state.hasWrongAttempt && !state.isMastered
+    }
+
+    private func registerLessonCompletion() {
+        completedLearningCards += 1
+
+        let today = calendar.startOfDay(for: Date())
+        let lastDate = lastCompletedLearningDate
+
+        if let lastDate {
+            let normalizedLastDate = calendar.startOfDay(for: lastDate)
+            if calendar.isDate(normalizedLastDate, inSameDayAs: today) {
+                // 同一天内多次完成，仅增加完成次数，不重复增加连胜
+            } else if let diff = calendar.dateComponents([.day], from: normalizedLastDate, to: today).day,
+                      diff == 1 {
+                learningStreakDays += 1
+            } else {
+                learningStreakDays = 1
+            }
+        } else {
+            learningStreakDays = 1
+        }
+
+        lastCompletedLearningDate = today
+        hasCompletedLearningToday = true
+        persistLearningProgress()
+
+        if reminderEnabled {
+            let components = calendar.dateComponents([.hour, .minute], from: reminderTime)
+            reminderScheduler.suppressForToday(
+                hour: components.hour ?? 20,
+                minute: components.minute ?? 0
+            )
+        }
+    }
+
+    private func persistLearningProgress() {
+        defaults.set(completedLearningCards, forKey: Self.completedCardsKey)
+        defaults.set(learningStreakDays, forKey: Self.learningStreakDaysKey)
+        if let lastCompletedLearningDate {
+            defaults.set(lastCompletedLearningDate, forKey: Self.lastCompletedDateKey)
+        } else {
+            defaults.removeObject(forKey: Self.lastCompletedDateKey)
+        }
+
+        do {
+            let attemptsData = try JSONEncoder().encode(learningAttempts)
+            defaults.set(attemptsData, forKey: Self.learningAttemptsKey)
+        } catch {
+            NSLog("[AppModel] failed to persist learningAttempts: %@", error.localizedDescription)
+            statusMessage = "学习记录保存失败，请查看日志"
+        }
+        do {
+            let stateData = try JSONEncoder().encode(lessonProgressStates)
+            defaults.set(stateData, forKey: Self.lessonProgressStatesKey)
+        } catch {
+            NSLog("[AppModel] failed to persist lessonProgressStates: %@", error.localizedDescription)
+            statusMessage = "学习进度保存失败，请查看日志"
+        }
+    }
+
+    private func loadLearningProgress() {
+        completedLearningCards = defaults.integer(forKey: Self.completedCardsKey)
+        learningStreakDays = defaults.integer(forKey: Self.learningStreakDaysKey)
+        lastCompletedLearningDate = defaults.object(forKey: Self.lastCompletedDateKey) as? Date
+
+        if let attemptsData = defaults.data(forKey: Self.learningAttemptsKey),
+           let decodedAttempts = try? JSONDecoder().decode([LearningAttemptRecord].self, from: attemptsData) {
+            learningAttempts = decodedAttempts.sorted { $0.createdAt > $1.createdAt }
+        } else {
+            learningAttempts = []
+        }
+
+        if let stateData = defaults.data(forKey: Self.lessonProgressStatesKey),
+           let decodedStates = try? JSONDecoder().decode([String: LessonProgressState].self, from: stateData) {
+            lessonProgressStates = decodedStates
+        } else {
+            lessonProgressStates = [:]
+        }
+
+        if lessonProgressStates.isEmpty, !learningAttempts.isEmpty {
+            rebuildLessonProgressFromAttempts()
+            persistLearningProgress()
+        }
+
+        refreshDailyCompletionState()
+    }
+
+    private func rebuildLessonProgressFromAttempts() {
+        var rebuilt: [String: LessonProgressState] = [:]
+
+        for attempt in learningAttempts.sorted(by: { $0.createdAt < $1.createdAt }) {
+            var state = rebuilt[attempt.lessonTemplateID] ?? LessonProgressState(
+                topicRawValue: attempt.topicRawValue,
+                lessonTitle: attempt.lessonTitle,
+                question: attempt.question,
+                hasWrongAttempt: false,
+                isMastered: false,
+                attempts: 0,
+                lastAttemptAt: attempt.createdAt
+            )
+
+            state.topicRawValue = attempt.topicRawValue
+            state.lessonTitle = attempt.lessonTitle
+            state.question = attempt.question
+            state.attempts += 1
+            state.lastAttemptAt = attempt.createdAt
+            if attempt.isCorrect {
+                state.isMastered = true
+            } else {
+                state.hasWrongAttempt = true
+            }
+
+            rebuilt[attempt.lessonTemplateID] = state
+        }
+
+        lessonProgressStates = rebuilt
+    }
+
+    private struct LessonTemplate {
+        let id: String
+        let title: String
+        let warmup: String
+        let passage: String
+        let phrases: [LessonPhrase]
+        let question: String
+        let options: [String]
+        let answerIndex: Int
+        let explanation: String
+    }
+
+    private static func makeLesson(topic: InterestTopic, seed: Int) -> InterestLesson {
+        let templates = lessonTemplates[topic] ?? [fallbackTemplate(for: topic)]
+        let dayIndex = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        let index = abs(dayIndex + seed) % templates.count
+        let selected = templates[index]
+
+        return makeLesson(topic: topic, template: selected)
+    }
+
+    private static func makeLesson(topic: InterestTopic, template: LessonTemplate) -> InterestLesson {
+        return InterestLesson(
+            templateID: template.id,
+            topic: topic,
+            title: template.title,
+            warmup: template.warmup,
+            passage: template.passage,
+            phrases: template.phrases,
+            question: template.question,
+            options: template.options,
+            answerIndex: template.answerIndex,
+            explanation: template.explanation
+        )
+    }
+
+    private static func fallbackTemplate(for topic: InterestTopic) -> LessonTemplate {
+        LessonTemplate(
+            id: "\(topic.rawValue)-fallback",
+            title: "\(topic.title) 速读",
+            warmup: "先读 45 秒，再大声复述 1 句。",
+            passage: "Learning with your interests makes practice easier and more consistent.",
+            phrases: [
+                LessonPhrase(
+                    english: "consistent",
+                    chinese: "持续的",
+                    example: "Small and consistent steps beat random hard work."
+                )
+            ],
+            question: "哪句话更符合上面短文？",
+            options: [
+                "兴趣学习会降低学习持续性",
+                "兴趣学习能让练习更容易坚持",
+                "兴趣学习不需要复习"
+            ],
+            answerIndex: 1,
+            explanation: "兴趣能提高投入感，从而更容易坚持每天练习。"
+        )
+    }
+
+    private static let lessonTemplates: [InterestTopic: [LessonTemplate]] = [
+        .movies: [
+            LessonTemplate(
+                id: "movies-trailer",
+                title: "电影预告片跟读",
+                warmup: "想象你在给朋友推荐一部电影。",
+                passage: "The trailer opens with a quiet city, then a sudden explosion changes everything. The hero does not trust anyone, but she keeps moving forward to protect her family.",
+                phrases: [
+                    LessonPhrase(
+                        english: "opens with",
+                        chinese: "以...开场",
+                        example: "The story opens with a rainy night."
+                    ),
+                    LessonPhrase(
+                        english: "keep moving forward",
+                        chinese: "继续向前",
+                        example: "Even when it is hard, keep moving forward."
+                    )
+                ],
+                question: "这段预告片主角的核心状态是什么？",
+                options: [
+                    "她马上放弃任务",
+                    "她在怀疑中继续保护家人",
+                    "她计划离开城市旅行"
+                ],
+                answerIndex: 1,
+                explanation: "文中明确提到她不信任任何人但仍继续前进保护家人。"
+            ),
+            LessonTemplate(
+                id: "movies-review",
+                title: "影评一句话复述",
+                warmup: "用英语说一句你最近看过的电影评价。",
+                passage: "I expected a simple comedy, but the film surprised me with emotional depth. The dialogue felt natural, and the ending stayed in my mind after I left the theater.",
+                phrases: [
+                    LessonPhrase(
+                        english: "emotional depth",
+                        chinese: "情感深度",
+                        example: "The novel has emotional depth."
+                    ),
+                    LessonPhrase(
+                        english: "stayed in my mind",
+                        chinese: "让我久久难忘",
+                        example: "Her speech stayed in my mind all week."
+                    )
+                ],
+                question: "作者为什么对这部电影印象深刻？",
+                options: [
+                    "演员阵容非常豪华",
+                    "电影节奏很快",
+                    "对白自然且结尾令人难忘"
+                ],
+                answerIndex: 2,
+                explanation: "关键词是 dialogue felt natural 与 ending stayed in my mind。"
+            )
+        ],
+        .technology: [
+            LessonTemplate(
+                id: "tech-news",
+                title: "科技新闻速读",
+                warmup: "想象你在团队晨会上汇报一条科技动态。",
+                passage: "Our team launched a small AI feature last week. Users adopted it quickly because it reduced repetitive tasks and gave instant suggestions during writing.",
+                phrases: [
+                    LessonPhrase(
+                        english: "adopt quickly",
+                        chinese: "快速采用",
+                        example: "Customers adopt quickly when the workflow is simple."
+                    ),
+                    LessonPhrase(
+                        english: "repetitive tasks",
+                        chinese: "重复性任务",
+                        example: "Automation saves us from repetitive tasks."
+                    )
+                ],
+                question: "用户为什么会快速采用这个功能？",
+                options: [
+                    "因为界面颜色更好看",
+                    "因为减少重复任务并提供即时建议",
+                    "因为发布会规模很大"
+                ],
+                answerIndex: 1,
+                explanation: "原文给出的直接原因是效率提升与即时建议。"
+            ),
+            LessonTemplate(
+                id: "tech-update",
+                title: "产品迭代表达",
+                warmup: "练习一句常见工作表达：We shipped an update.",
+                passage: "We shipped an update with better search relevance. Instead of adding many buttons, we simplified the flow so new users can finish onboarding in two minutes.",
+                phrases: [
+                    LessonPhrase(
+                        english: "search relevance",
+                        chinese: "搜索相关性",
+                        example: "We improved search relevance with cleaner tags."
+                    ),
+                    LessonPhrase(
+                        english: "onboarding",
+                        chinese: "新手引导",
+                        example: "Good onboarding reduces early confusion."
+                    )
+                ],
+                question: "这次更新最核心的设计动作是什么？",
+                options: [
+                    "增加更多按钮",
+                    "简化流程以缩短上手时间",
+                    "移除搜索能力"
+                ],
+                answerIndex: 1,
+                explanation: "Instead of adding many buttons, we simplified the flow。"
+            )
+        ],
+        .travel: [
+            LessonTemplate(
+                id: "travel-plan",
+                title: "旅行计划表达",
+                warmup: "想象你正在和朋友讨论周末短途旅行。",
+                passage: "We left early to catch the first train and reached the old town before noon. The streets were quiet, so we explored local cafes and walked along the river.",
+                phrases: [
+                    LessonPhrase(
+                        english: "catch the first train",
+                        chinese: "赶第一班火车",
+                        example: "If we catch the first train, we can avoid crowds."
+                    ),
+                    LessonPhrase(
+                        english: "old town",
+                        chinese: "老城区",
+                        example: "The old town has great food and history."
+                    )
+                ],
+                question: "他们为什么能在中午前到达？",
+                options: [
+                    "因为提前出发赶第一班车",
+                    "因为住在老城区",
+                    "因为取消了行程"
+                ],
+                answerIndex: 0,
+                explanation: "原文第一句给出原因：left early to catch the first train。"
+            ),
+            LessonTemplate(
+                id: "travel-airport",
+                title: "机场沟通表达",
+                warmup: "练习问路句型：Could you tell me where ... is?",
+                passage: "At the airport, I asked a staff member where gate C18 was. She gave clear directions, and I arrived at the boarding area with plenty of time.",
+                phrases: [
+                    LessonPhrase(
+                        english: "clear directions",
+                        chinese: "清晰指引",
+                        example: "Clear directions save time in large airports."
+                    ),
+                    LessonPhrase(
+                        english: "plenty of time",
+                        chinese: "充足时间",
+                        example: "We arrived early and had plenty of time."
+                    )
+                ],
+                question: "作者最后处于什么状态？",
+                options: [
+                    "赶不上登机",
+                    "时间充裕地到达登机区",
+                    "找不到航站楼"
+                ],
+                answerIndex: 1,
+                explanation: "with plenty of time 表示时间充裕。"
+            )
+        ],
+        .gaming: [
+            LessonTemplate(
+                id: "gaming-recap",
+                title: "游戏复盘表达",
+                warmup: "回想一次你逆风翻盘的对局。",
+                passage: "Our team lost two early rounds, but we adjusted our strategy and controlled the map. Once communication improved, we won three rounds in a row.",
+                phrases: [
+                    LessonPhrase(
+                        english: "adjust strategy",
+                        chinese: "调整策略",
+                        example: "Good players adjust strategy quickly."
+                    ),
+                    LessonPhrase(
+                        english: "in a row",
+                        chinese: "连续地",
+                        example: "She solved five problems in a row."
+                    )
+                ],
+                question: "队伍翻盘的关键因素是什么？",
+                options: [
+                    "换了新设备",
+                    "沟通改善并调整策略",
+                    "对手提前退出"
+                ],
+                answerIndex: 1,
+                explanation: "原文强调 strategy 调整与 communication 改善。"
+            ),
+            LessonTemplate(
+                id: "gaming-caster",
+                title: "直播解说表达",
+                warmup: "尝试用英文描述一场精彩团战。",
+                passage: "The final fight looked risky, but the support player timed the shield perfectly. That single move changed momentum and secured the victory.",
+                phrases: [
+                    LessonPhrase(
+                        english: "change momentum",
+                        chinese: "扭转局势",
+                        example: "One smart decision can change momentum."
+                    ),
+                    LessonPhrase(
+                        english: "secure the victory",
+                        chinese: "锁定胜局",
+                        example: "They secured the victory in overtime."
+                    )
+                ],
+                question: "什么动作改变了比赛局势？",
+                options: [
+                    "辅助完美时机开盾",
+                    "打野单独绕后",
+                    "中路换线"
+                ],
+                answerIndex: 0,
+                explanation: "timed the shield perfectly 是决定性动作。"
+            )
+        ],
+        .music: [
+            LessonTemplate(
+                id: "music-share",
+                title: "音乐分享表达",
+                warmup: "给朋友推荐一首最近循环的歌。",
+                passage: "I discovered this song on a rainy evening, and the rhythm instantly lifted my mood. The lyrics are simple, but the melody keeps playing in my head.",
+                phrases: [
+                    LessonPhrase(
+                        english: "lift my mood",
+                        chinese: "提振心情",
+                        example: "A short walk can lift my mood."
+                    ),
+                    LessonPhrase(
+                        english: "keeps playing in my head",
+                        chinese: "一直在脑中循环",
+                        example: "That chorus keeps playing in my head."
+                    )
+                ],
+                question: "这首歌最打动作者的点是什么？",
+                options: [
+                    "歌词复杂",
+                    "节奏提振情绪且旋律洗脑",
+                    "演唱会现场灯光"
+                ],
+                answerIndex: 1,
+                explanation: "关键词是 rhythm lifted my mood 和 melody keeps playing in my head。"
+            ),
+            LessonTemplate(
+                id: "music-practice",
+                title: "练琴反馈表达",
+                warmup: "描述你一次有效的练习过程。",
+                passage: "I practiced the same section slowly for twenty minutes. After repeating it with a metronome, my timing became stable and the whole piece sounded cleaner.",
+                phrases: [
+                    LessonPhrase(
+                        english: "with a metronome",
+                        chinese: "配合节拍器",
+                        example: "Practicing with a metronome improves timing."
+                    ),
+                    LessonPhrase(
+                        english: "sounded cleaner",
+                        chinese: "听起来更干净",
+                        example: "The second take sounded cleaner."
+                    )
+                ],
+                question: "作者的演奏为何变好？",
+                options: [
+                    "换了更贵的乐器",
+                    "放慢并重复练习，配合节拍器",
+                    "只练了开头部分"
+                ],
+                answerIndex: 1,
+                explanation: "slowly + repeating + metronome 直接带来 timing 稳定。"
+            )
+        ]
+    ]
+}
