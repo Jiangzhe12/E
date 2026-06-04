@@ -7,14 +7,14 @@ struct SettingsView: View {
         Form {
             Section("翻译设置") {
                 Toggle(
-                    "翻译浮窗",
+                    "桌宠翻译气泡",
                     isOn: Binding(
                         get: { model.translationPresentationMode == .floating },
                         set: { model.translationPresentationMode = $0 ? .floating : .mainWindow }
                     )
                 )
                 .toggleStyle(.switch)
-                Text("开启后 ⌘C⌘C 的译文以光标附近的浮窗展示，不抢主窗口焦点。")
+                Text("开启后桌面会常驻一个翻译桌宠，⌘C⌘C 的译文会显示在它头上的气泡里。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

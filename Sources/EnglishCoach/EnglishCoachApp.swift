@@ -11,6 +11,7 @@ struct EnglishCoachApp: App {
             ContentView(model: model)
                 .onAppear {
                     model.refreshDailyCompletionState()
+                    model.syncDesktopPetVisibility()
                     iconManager.applyLearningState(
                         completedToday: model.hasCompletedLearningToday,
                         animateTransition: false
@@ -25,6 +26,7 @@ struct EnglishCoachApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                     model.refreshDailyCompletionState()
                     model.refreshPermissionStatus()
+                    model.syncDesktopPetVisibility()
                     iconManager.applyLearningState(
                         completedToday: model.hasCompletedLearningToday,
                         animateTransition: false

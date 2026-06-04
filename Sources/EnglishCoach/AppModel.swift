@@ -35,6 +35,7 @@ final class AppModel: ObservableObject {
         didSet {
             guard oldValue != translationPresentationMode else { return }
             defaults.set(translationPresentationMode.rawValue, forKey: Self.translationPresentationModeKey)
+            syncDesktopPetVisibility()
         }
     }
     @Published var manualDirectionChoice: TranslationDirectionChoice = .auto
@@ -479,6 +480,15 @@ final class AppModel: ObservableObject {
             }
         } else {
             statusMessage = "请在 系统设置 -> 隐私与安全性 -> 辅助功能 中允许本应用（若已允许，请返回本应用稍等一下）"
+        }
+    }
+
+    func syncDesktopPetVisibility() {
+        switch translationPresentationMode {
+        case .floating:
+            popoverController.showDesktopPet()
+        case .mainWindow:
+            popoverController.hideDesktopPet()
         }
     }
 

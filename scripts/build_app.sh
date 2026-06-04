@@ -13,6 +13,7 @@ ICON_COMPLETED_GLOW_NAME="AppIconCompletedGlow"
 ICON_PENDING_SOURCE="${ICON_PENDING_SOURCE:-$ROOT_DIR/Resources/AppIcon-pending-1024.png}"
 ICON_COMPLETED_SOURCE="${ICON_COMPLETED_SOURCE:-$ROOT_DIR/Resources/AppIcon-completed-1024.png}"
 ICON_COMPLETED_GLOW_SOURCE="${ICON_COMPLETED_GLOW_SOURCE:-$ROOT_DIR/Resources/AppIcon-completed-glow-1024.png}"
+DESKTOP_PET_SOURCE="${DESKTOP_PET_SOURCE:-$ROOT_DIR/Resources/DesktopPetSprite.png}"
 
 SDK_CANDIDATE="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
 if [[ -d "$SDK_CANDIDATE" ]]; then
@@ -29,6 +30,10 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
+
+if [[ -f "$DESKTOP_PET_SOURCE" ]]; then
+  cp "$DESKTOP_PET_SOURCE" "$APP_DIR/Contents/Resources/DesktopPetSprite.png"
+fi
 
 ensure_icon_source() {
   local path="$1"
@@ -183,3 +188,4 @@ echo "Open with: open '$APP_DIR'"
 echo "Pending icon source: $ICON_PENDING_SOURCE"
 echo "Completed icon source: $ICON_COMPLETED_SOURCE"
 echo "Completed glow source: $ICON_COMPLETED_GLOW_SOURCE"
+echo "Desktop pet source: $DESKTOP_PET_SOURCE"
