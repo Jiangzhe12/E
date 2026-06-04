@@ -35,6 +35,14 @@ if [[ -f "$DESKTOP_PET_SOURCE" ]]; then
   cp "$DESKTOP_PET_SOURCE" "$APP_DIR/Contents/Resources/DesktopPetSprite.png"
 fi
 
+# ECDICT offline dictionary (optional — run scripts/fetch_ecdict.sh once to download).
+ECDICT_SOURCE="${ECDICT_SOURCE:-$ROOT_DIR/Resources/ecdict.db}"
+if [[ -f "$ECDICT_SOURCE" ]]; then
+  cp "$ECDICT_SOURCE" "$APP_DIR/Contents/Resources/ecdict.db"
+else
+  echo "note: Resources/ecdict.db not found — offline dictionary disabled (run scripts/fetch_ecdict.sh)"
+fi
+
 ensure_icon_source() {
   local path="$1"
   local variant="$2"

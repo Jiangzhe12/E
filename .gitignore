@@ -9,3 +9,6 @@ DerivedData/
 dist/
 .claude/
 /.superpowers/
+
+# ECDICT offline dictionary (~200MB, fetched via scripts/fetch_ecdict.sh)
+Resources/ecdict.db

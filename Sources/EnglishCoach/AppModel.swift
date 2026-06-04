@@ -38,6 +38,20 @@ final class AppModel: ObservableObject {
             syncDesktopPetVisibility()
         }
     }
+    @Published var claudeAPIKey: String = "" {
+        didSet {
+            guard oldValue != claudeAPIKey else { return }
+            defaults.set(claudeAPIKey, forKey: Self.claudeAPIKeyKey)
+            pushClaudeConfiguration()
+        }
+    }
+    @Published var claudeModel: String = ClaudeTranslationProvider.defaultModel {
+        didSet {
+            guard oldValue != claudeModel else { return }
+            defaults.set(claudeModel, forKey: Self.claudeModelKey)
+            pushClaudeConfiguration()
+        }
+    }
     @Published var manualDirectionChoice: TranslationDirectionChoice = .auto
     @Published var historyTimeFilter: HistoryTimeFilter = .all
     @Published var reminderEnabled: Bool = false
@@ -82,6 +96,8 @@ final class AppModel: ObservableObject {
     private static let learningAttemptsKey = "learning.attempts.v1"
     private static let lessonProgressStatesKey = "learning.lessonProgressStates.v1"
     private static let translationPresentationModeKey = "translation.presentationMode"
+    private static let claudeAPIKeyKey = "translation.claudeAPIKey"
+    private static let claudeModelKey = "translation.claudeModel"
     private static let reminderEnabledKey = "reminder.enabled"
     private static let reminderHourKey = "reminder.hour"
     private static let reminderMinuteKey = "reminder.minute"
@@ -128,6 +144,13 @@ final class AppModel: ObservableObject {
            let mode = TranslationPresentation(rawValue: raw) {
             self.translationPresentationMode = mode
         }
+
+        self.claudeAPIKey = defaults.string(forKey: Self.claudeAPIKeyKey) ?? ""
+        if let storedModel = defaults.string(forKey: Self.claudeModelKey), !storedModel.isEmpty {
+            self.claudeModel = storedModel
+        }
+        // Property observers don't fire during init — push explicitly.
+        pushClaudeConfiguration()
 
         self.reminderEnabled = defaults.bool(forKey: Self.reminderEnabledKey)
         if defaults.object(forKey: Self.reminderHourKey) != nil {
@@ -476,6 +499,16 @@ final class AppModel: ObservableObject {
     /// buttons on the daily word card and the translation result card.
     func speak(_ text: String) {
         speechService.speak(text)
+    }
+
+    /// Forward the current Claude API key + model into the translation
+    /// service actor. Called at startup and whenever settings change.
+    private func pushClaudeConfiguration() {
+        let apiKey = claudeAPIKey
+        let model = claudeModel
+        Task {
+            await translationService.updateClaudeConfiguration(apiKey: apiKey, model: model)
+        }
     }
 
     func requestAccessibilityPermission() {

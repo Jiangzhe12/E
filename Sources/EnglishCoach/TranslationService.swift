@@ -1,11 +1,5 @@
 import Foundation
 
-private struct LocalDictionaryEntry {
-    let translatedText: String
-    let phonetic: String?
-    let explanations: [String]
-}
-
 private struct MyMemoryResponse: Decodable {
     struct ResponseData: Decodable {
         let translatedText: String
@@ -27,10 +21,17 @@ enum TranslationServiceError: LocalizedError {
 
 struct TranslationOutcome {
     let result: TranslationResult
-    /// Human-readable notice if online fallback was attempted and failed; nil otherwise.
+    /// Human-readable notice if a higher-priority provider failed and we fell
+    /// back to another one; nil when the first choice succeeded.
     let onlineNotice: String?
 }
 
+/// Orchestrates translation across providers, best-first:
+/// 1. ECDICT offline dictionary — English words/short phrases (instant, free)
+/// 2. Claude API — sentences, ZH→EN, and dictionary misses (needs API key)
+/// 3. MyMemory — free online fallback when Claude is unconfigured or fails
+/// The winning provider is recorded in `TranslationResult.provider` so the UI
+/// can show where each translation came from.
 actor TranslationService {
     /// Detect whether the input is Chinese (→ translate to English) or English
     /// (→ translate to Chinese) based on the proportion of CJK characters.
@@ -49,36 +50,37 @@ actor TranslationService {
             : .englishToChinese
     }
 
-    private let localDictionary: [String: LocalDictionaryEntry] = [
-        "ability": LocalDictionaryEntry(translatedText: "能力", phonetic: "/əˈbɪləti/", explanations: ["the power or skill to do something"]),
-        "achieve": LocalDictionaryEntry(translatedText: "实现；达成", phonetic: "/əˈtʃiːv/", explanations: ["to succeed in reaching a goal"]),
-        "challenge": LocalDictionaryEntry(translatedText: "挑战", phonetic: "/ˈtʃælɪndʒ/", explanations: ["a difficult task that tests ability"]),
-        "consistency": LocalDictionaryEntry(translatedText: "一致性；持续性", phonetic: "/kənˈsɪstənsi/", explanations: ["the quality of always being done in the same way"]),
-        "curious": LocalDictionaryEntry(translatedText: "好奇的", phonetic: "/ˈkjʊriəs/", explanations: ["eager to know or learn"]),
-        "develop": LocalDictionaryEntry(translatedText: "发展；培养", phonetic: "/dɪˈveləp/", explanations: ["to grow or improve over time"]),
-        "effort": LocalDictionaryEntry(translatedText: "努力", phonetic: "/ˈefərt/", explanations: ["hard work to achieve something"]),
-        "focus": LocalDictionaryEntry(translatedText: "专注", phonetic: "/ˈfoʊkəs/", explanations: ["to give full attention to something"]),
-        "habit": LocalDictionaryEntry(translatedText: "习惯", phonetic: "/ˈhæbɪt/", explanations: ["something you do regularly"]),
-        "improve": LocalDictionaryEntry(translatedText: "提升；改进", phonetic: "/ɪmˈpruːv/", explanations: ["to become better"]),
-        "interest": LocalDictionaryEntry(translatedText: "兴趣", phonetic: "/ˈɪntrəst/", explanations: ["a feeling of wanting to know more"]),
-        "language": LocalDictionaryEntry(translatedText: "语言", phonetic: "/ˈlæŋɡwɪdʒ/", explanations: ["a system of communication"]),
-        "learn": LocalDictionaryEntry(translatedText: "学习", phonetic: "/lɜːrn/", explanations: ["to gain knowledge"]),
-        "memory": LocalDictionaryEntry(translatedText: "记忆", phonetic: "/ˈmeməri/", explanations: ["the ability to remember"]),
-        "motivation": LocalDictionaryEntry(translatedText: "动力", phonetic: "/ˌmoʊtɪˈveɪʃn/", explanations: ["the reason for doing something"]),
-        "practice": LocalDictionaryEntry(translatedText: "练习", phonetic: "/ˈpræktɪs/", explanations: ["repeated activity to improve skill"]),
-        "progress": LocalDictionaryEntry(translatedText: "进步", phonetic: "/ˈprɑːɡres/", explanations: ["movement toward improvement"]),
-        "review": LocalDictionaryEntry(translatedText: "复习", phonetic: "/rɪˈvjuː/", explanations: ["to study something again"]),
-        "translate": LocalDictionaryEntry(translatedText: "翻译", phonetic: "/trænsˈleɪt/", explanations: ["to change words into another language"]),
-        "vocabulary": LocalDictionaryEntry(translatedText: "词汇", phonetic: "/voʊˈkæbjəleri/", explanations: ["all the words someone knows"]),
-        "take off": LocalDictionaryEntry(translatedText: "起飞；脱下", phonetic: nil, explanations: ["to leave the ground in an aircraft", "to remove clothing"]),
-        "look up": LocalDictionaryEntry(translatedText: "查找；查阅", phonetic: nil, explanations: ["to search for information"]),
-        "stick to": LocalDictionaryEntry(translatedText: "坚持", phonetic: nil, explanations: ["to continue doing something"])
-    ]
+    /// True for inputs the offline dictionary can answer: English words or
+    /// short phrases ("take off", "state-of-the-art"), up to 3 words.
+    static func isDictionaryLookup(_ text: String) -> Bool {
+        let words = text.split(separator: " ")
+        guard (1 ... 3).contains(words.count) else { return false }
+        let allowed = CharacterSet.letters
+            .union(CharacterSet(charactersIn: "-'’ "))
+        return text.unicodeScalars.allSatisfy { allowed.contains($0) }
+            && text.unicodeScalars.contains { CharacterSet.letters.contains($0) }
+    }
 
     private let enableOnlineFallback: Bool
+    private let ecdict = ECDICTDictionary()
+    private var claude: ClaudeTranslationProvider?
 
     init(enableOnlineFallback: Bool) {
         self.enableOnlineFallback = enableOnlineFallback
+    }
+
+    /// Called at startup and whenever the user edits the API key / model in
+    /// settings. An empty key disables the Claude provider.
+    func updateClaudeConfiguration(apiKey: String, model: String) {
+        let trimmedKey = apiKey.trimmed
+        if trimmedKey.isEmpty {
+            claude = nil
+        } else {
+            claude = ClaudeTranslationProvider(
+                apiKey: trimmedKey,
+                model: model.trimmed.isEmpty ? ClaudeTranslationProvider.defaultModel : model.trimmed
+            )
+        }
     }
 
     func translate(_ text: String, direction override: TranslationDirection? = nil) async throws -> TranslationOutcome {
@@ -88,51 +90,105 @@ actor TranslationService {
         }
 
         let direction = override ?? Self.detectDirection(trimmed)
+        var notices: [String] = []
 
-        // Local dictionary only has English keys — skip for ZH→EN.
-        if direction == .englishToChinese {
-            let normalized = trimmed.normalizedForLookup
-            if let local = localDictionary[normalized] {
-                return TranslationOutcome(
-                    result: TranslationResult(
-                        originalText: trimmed,
-                        translatedText: local.translatedText,
-                        phonetic: local.phonetic,
-                        explanations: local.explanations,
-                        provider: "Local Dictionary",
-                        direction: direction
-                    ),
-                    onlineNotice: nil
-                )
-            }
+        // 1. Offline dictionary — only holds English headwords.
+        if direction == .englishToChinese,
+           Self.isDictionaryLookup(trimmed),
+           let entry = await ecdict.lookup(trimmed.normalizedForLookup) {
+            return TranslationOutcome(
+                result: Self.makeResult(from: entry, originalText: trimmed, direction: direction),
+                onlineNotice: nil
+            )
         }
 
-        var onlineNotice: String?
-        if enableOnlineFallback {
+        guard enableOnlineFallback else {
+            return Self.makeFallbackOutcome(for: trimmed, direction: direction, notices: notices, onlineEnabled: false)
+        }
+
+        // 2. Claude API — best quality, includes learner-oriented explanations.
+        if let claude {
             do {
-                let onlineResult = try await translateWithMyMemory(trimmed, direction: direction)
-                return TranslationOutcome(result: onlineResult, onlineNotice: nil)
+                let result = try await claude.translate(trimmed, direction: direction)
+                return TranslationOutcome(result: result, onlineNotice: nil)
             } catch {
                 let reason = Self.describeOnlineError(error)
-                NSLog("[TranslationService] online lookup failed: %@", reason)
-                onlineNotice = "在线翻译暂不可用（\(reason)），已回退到本地词典。"
+                NSLog("[TranslationService] Claude lookup failed: %@", reason)
+                notices.append("Claude 翻译失败（\(reason)），已回退到 MyMemory。")
             }
         }
 
+        // 3. MyMemory — free machine translation, no key required.
+        do {
+            let result = try await translateWithMyMemory(trimmed, direction: direction)
+            return TranslationOutcome(result: result, onlineNotice: notices.last)
+        } catch {
+            let reason = Self.describeOnlineError(error)
+            NSLog("[TranslationService] MyMemory lookup failed: %@", reason)
+            notices.append("在线翻译暂不可用（\(reason)）。")
+        }
+
+        return Self.makeFallbackOutcome(for: trimmed, direction: direction, notices: notices, onlineEnabled: true)
+    }
+
+    private static func makeResult(
+        from entry: ECDICTEntry,
+        originalText: String,
+        direction: TranslationDirection
+    ) -> TranslationResult {
+        var explanations = entry.definition?
+            .split(separator: "\n")
+            .map { String($0).trimmed }
+            .filter { !$0.isEmpty } ?? []
+        if let tag = entry.tag {
+            explanations.append("考试标签：\(Self.describeTags(tag))")
+        }
+        return TranslationResult(
+            originalText: originalText,
+            translatedText: entry.translation,
+            phonetic: entry.phonetic,
+            explanations: explanations,
+            provider: "ECDICT 本地词典",
+            direction: direction
+        )
+    }
+
+    private static let tagNames: [String: String] = [
+        "zk": "中考", "gk": "高考", "ky": "考研",
+        "cet4": "四级", "cet6": "六级",
+        "toefl": "托福", "ielts": "雅思", "gre": "GRE"
+    ]
+
+    private static func describeTags(_ tag: String) -> String {
+        tag.split(separator: " ")
+            .map { tagNames[String($0)] ?? String($0) }
+            .joined(separator: " / ")
+    }
+
+    private static func makeFallbackOutcome(
+        for text: String,
+        direction: TranslationDirection,
+        notices: [String],
+        onlineEnabled: Bool
+    ) -> TranslationOutcome {
+        let notice = notices.isEmpty ? nil : notices.joined(separator: " ")
         return TranslationOutcome(
             result: TranslationResult(
-                originalText: trimmed,
-                translatedText: "暂无本地词典释义：\(trimmed)",
+                originalText: text,
+                translatedText: "暂无翻译结果：\(text)",
                 phonetic: nil,
-                explanations: onlineNotice.map { [$0] } ?? ["本地词典未收录此内容。"],
-                provider: enableOnlineFallback ? "Fallback (online unavailable)" : "Fallback",
+                explanations: notice.map { [$0] } ?? ["本地词典未收录此内容。"],
+                provider: onlineEnabled ? "Fallback (online unavailable)" : "Fallback",
                 direction: direction
             ),
-            onlineNotice: onlineNotice
+            onlineNotice: notice
         )
     }
 
     private static func describeOnlineError(_ error: Error) -> String {
+        if let claudeError = error as? ClaudeTranslationError {
+            return claudeError.localizedDescription
+        }
         if let urlError = error as? URLError {
             switch urlError.code {
             case .timedOut: return "请求超时"
