@@ -139,6 +139,15 @@ final class AppModel: ObservableObject {
         self.popoverController.onOpenMainWindow = { [weak self] in
             self?.openMainWindow()
         }
+        self.popoverController.onRequestDailyWord = { [weak self] in
+            self?.showDesktopDailyWordInvite()
+        }
+        self.popoverController.onDailyWordComplete = { [weak self] card in
+            self?.completeDesktopDailyWord(card)
+        }
+        self.popoverController.onDailyWordPractice = { [weak self] card in
+            self?.practiceDesktopDailyWord(card)
+        }
 
         self.hotkeyManager.onHotKeyPressed = { [weak self] in
             guard let self else { return }
@@ -492,6 +501,46 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func showDesktopDailyWordInvite() {
+        guard translationPresentationMode == .floating else { return }
+
+        guard let card = currentDailyWordCard else {
+            popoverController.presentFeedback(title: "今日单词", message: "今天暂无可学习单词")
+            return
+        }
+
+        popoverController.presentDailyWordInvite(card: card)
+    }
+
+    private func completeDesktopDailyWord(_ card: DesktopWordCard) {
+        guard currentDailyWordCard?.word == card.word else {
+            showDesktopDailyWordInvite()
+            return
+        }
+
+        if card.isReview {
+            rememberCurrentWord()
+            popoverController.presentFeedback(title: "复习完成", message: "\(card.word) 已进入下次复习")
+        } else {
+            markCurrentWordAsMastered()
+            popoverController.presentFeedback(title: "记住了", message: "\(card.word) 已加入复习节奏")
+        }
+    }
+
+    private func practiceDesktopDailyWord(_ card: DesktopWordCard) {
+        guard currentDailyWordCard?.word == card.word else {
+            showDesktopDailyWordInvite()
+            return
+        }
+
+        if card.isReview {
+            forgotCurrentWord()
+        } else {
+            statusMessage = "稍后再练：\(card.word)"
+        }
+        popoverController.presentFeedback(title: "稍后再练", message: "\(card.word) 会继续留在学习队列")
+    }
+
     func translateFromManualInput() {
         let text = manualInput.trimmed
         guard !text.isEmpty else {
@@ -806,12 +855,22 @@ final class AppModel: ObservableObject {
         let cleanedText = text.trimmed
         guard !cleanedText.isEmpty else {
             statusMessage = "内容为空，无法翻译"
+            if presentation == .floating {
+                popoverController.presentFeedback(title: "没有内容", message: "先选中文本再试一次")
+            }
             return
         }
 
         if cleanedText.count > 500 {
             statusMessage = "一次最多翻译 500 个字符，再长建议分段"
+            if presentation == .floating {
+                popoverController.presentFeedback(title: "内容太长", message: "一次最多翻译 500 个字符")
+            }
             return
+        }
+
+        if presentation == .floating {
+            popoverController.presentTranslating(text: cleanedText, near: bestPopoverPosition())
         }
 
         isTranslating = true
@@ -874,6 +933,9 @@ final class AppModel: ObservableObject {
             )
             pendingRetry = true
             statusMessage = "翻译失败：\(error.localizedDescription) — 可点 statusCard 的「重试」"
+            if presentation == .floating {
+                popoverController.presentFeedback(title: "翻译失败", message: "稍后再试，或到主窗口重试")
+            }
         }
     }
 

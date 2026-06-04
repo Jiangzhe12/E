@@ -9,11 +9,22 @@ final class TranslationPopoverController {
     private var autoDismissTimer: Timer?
     private var globalClickMonitor: Any?
     private let desktopPetState = DesktopPetPresentationState()
-    private let desktopPetIdlePanelSize = NSSize(width: 148, height: 156)
-    private let desktopPetBubblePanelSize = NSSize(width: 424, height: 316)
+    private let desktopPetLayoutMetrics = DesktopPetLayoutMetrics()
+    private var desktopPetAnchorPoint: NSPoint?
     private let speechService = SpeechService()
 
+    private var desktopPetIdlePanelSize: NSSize {
+        desktopPetLayoutMetrics.idlePanelSize
+    }
+
+    private var desktopPetBubblePanelSize: NSSize {
+        desktopPetLayoutMetrics.bubblePanelSize
+    }
+
     var onOpenMainWindow: (() -> Void)?
+    var onRequestDailyWord: (() -> Void)?
+    var onDailyWordComplete: ((DesktopWordCard) -> Void)?
+    var onDailyWordPractice: ((DesktopWordCard) -> Void)?
 
     private var quickTranslatePanel: NSPanel?
     private let quickPanelWidth: CGFloat = 420
@@ -79,7 +90,7 @@ final class TranslationPopoverController {
         let panel = ensureDesktopPetPanel()
         if !panel.isVisible {
             positionDesktopPetPanel(panel, near: point, size: desktopPetIdlePanelSize)
-        } else if desktopPetState.result == nil {
+        } else if !desktopPetState.hasBubble {
             resizeDesktopPetPanel(panel, to: desktopPetIdlePanelSize)
         }
         panel.orderFrontRegardless()
@@ -93,30 +104,52 @@ final class TranslationPopoverController {
         if let panel {
             resizeDesktopPetPanel(panel, to: desktopPetIdlePanelSize)
         }
+        desktopPetAnchorPoint = nil
         panel?.orderOut(nil)
+    }
+
+    func presentTranslating(text: String, near point: NSPoint) {
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: point) {
+            desktopPetState.showTranslating(text)
+        }
     }
 
     func present(result: TranslationResult, sourceAppName: String?, near point: NSPoint) {
         let panel = ensureDesktopPetPanel()
-        if !panel.isVisible {
-            positionDesktopPetPanel(panel, near: point, size: desktopPetBubblePanelSize)
-        } else {
-            resizeDesktopPetPanel(panel, to: desktopPetBubblePanelSize)
+        presentDesktopPetBubble(panel, near: point) {
+            desktopPetState.show(result: result, sourceAppName: sourceAppName)
         }
-        desktopPetState.show(result: result, sourceAppName: sourceAppName)
-        panel.orderFrontRegardless()
 
         startAutoDismissTimer()
         installGlobalClickMonitorIfNeeded()
+    }
+
+    func presentDailyWordInvite(card: DesktopWordCard) {
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: nil) {
+            desktopPetState.showDailyWordInvite(card)
+        }
+    }
+
+    func presentFeedback(title: String, message: String) {
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: nil) {
+            desktopPetState.showFeedback(title: title, message: message)
+        }
+        startAutoDismissTimer()
     }
 
     func dismiss() {
         autoDismissTimer?.invalidate()
         autoDismissTimer = nil
         removeGlobalClickMonitor()
-        desktopPetState.clearBubble()
         if let panel, panel.isVisible {
+            syncDesktopPetAnchor(from: panel)
+            desktopPetState.clearBubble()
             resizeDesktopPetPanel(panel, to: desktopPetIdlePanelSize)
+        } else {
+            desktopPetState.clearBubble()
         }
     }
 
@@ -144,6 +177,21 @@ final class TranslationPopoverController {
                 },
                 onCloseBubble: { [weak self] in
                     self?.dismiss()
+                },
+                onPetTap: { [weak self] in
+                    self?.onRequestDailyWord?()
+                },
+                onShowDailyWordMeaning: { [weak self] card in
+                    self?.desktopPetState.showDailyWordMeaning(card)
+                },
+                onDailyWordComplete: { [weak self] card in
+                    self?.onDailyWordComplete?(card)
+                },
+                onDailyWordPractice: { [weak self] card in
+                    self?.onDailyWordPractice?(card)
+                },
+                onSpeakDailyWord: { [weak self] card in
+                    self?.speechService.speak(card.word)
                 }
             )
         )
@@ -215,43 +263,123 @@ final class TranslationPopoverController {
 
         guard let visible = screen?.visibleFrame else { return }
 
-        let origin = NSPoint(
-            x: visible.maxX - panelSize.width - margin,
-            y: visible.minY + margin
+        let anchor = desktopPetAnchorPoint ?? defaultDesktopPetAnchor(in: visible, margin: margin)
+        desktopPetAnchorPoint = anchor
+
+        applyDesktopPetFrame(
+            panel,
+            size: panelSize,
+            anchor: anchor,
+            visibleFrame: visible
         )
-        panel.setFrame(NSRect(origin: origin, size: panelSize), display: true)
     }
 
     private func resizeDesktopPetPanel(_ panel: NSPanel, to size: NSSize) {
         let current = panel.frame
-        let anchoredOrigin = NSPoint(
-            x: current.maxX - size.width,
-            y: current.minY
-        )
+        syncDesktopPetAnchor(from: panel)
         let screen = NSScreen.screens.first(where: { $0.frame.intersects(current) })
             ?? NSScreen.main
 
-        guard let visible = screen?.visibleFrame else {
-            panel.setFrame(NSRect(origin: anchoredOrigin, size: size), display: true)
+        guard
+            let currentAnchor = desktopPetAnchorPoint,
+            let visible = screen?.visibleFrame
+        else { return }
+
+        applyDesktopPetFrame(
+            panel,
+            size: size,
+            anchor: currentAnchor,
+            visibleFrame: visible
+        )
+    }
+
+    private func applyDesktopPetFrame(
+        _ panel: NSPanel,
+        size: NSSize,
+        anchor: NSPoint,
+        visibleFrame visible: NSRect
+    ) {
+        if isDesktopPetBubbleSize(size) {
+            let layout = DesktopPetLayout.bubbleLayout(
+                for: anchor,
+                visibleFrame: visible,
+                metrics: desktopPetLayoutMetrics
+            )
+            desktopPetState.setBubblePlacement(layout.placement)
+            panel.setFrame(layout.frame, display: true)
             return
         }
 
-        let margin: CGFloat = 8
-        var origin = anchoredOrigin
-        if origin.x < visible.minX + margin {
-            origin.x = visible.minX + margin
-        }
-        if origin.x + size.width > visible.maxX - margin {
-            origin.x = visible.maxX - size.width - margin
-        }
-        if origin.y < visible.minY + margin {
-            origin.y = visible.minY + margin
-        }
-        if origin.y + size.height > visible.maxY - margin {
-            origin.y = visible.maxY - size.height - margin
+        let frame = DesktopPetLayout.idleFrame(
+            for: anchor,
+            visibleFrame: visible,
+            metrics: desktopPetLayoutMetrics
+        )
+        panel.setFrame(frame, display: true)
+    }
+
+    private func presentDesktopPetBubble(
+        _ panel: NSPanel,
+        near point: NSPoint?,
+        updateState: () -> Void
+    ) {
+        let targetPoint = point ?? NSEvent.mouseLocation
+        let screen = panel.isVisible
+            ? NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) }) ?? NSScreen.main
+            : NSScreen.screens.first(where: { $0.frame.contains(targetPoint) }) ?? NSScreen.main
+
+        guard let visible = screen?.visibleFrame else {
+            withoutDesktopPetTransitionAnimation(updateState)
+            panel.orderFrontRegardless()
+            return
         }
 
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        if panel.isVisible {
+            syncDesktopPetAnchor(from: panel)
+        }
+
+        let anchor = desktopPetAnchorPoint ?? defaultDesktopPetAnchor(in: visible, margin: 22)
+        desktopPetAnchorPoint = anchor
+        let layout = DesktopPetLayout.bubbleLayout(
+            for: anchor,
+            visibleFrame: visible,
+            metrics: desktopPetLayoutMetrics
+        )
+
+        panel.disableScreenUpdatesUntilFlush()
+        panel.setFrame(layout.frame, display: false)
+        withoutDesktopPetTransitionAnimation {
+            desktopPetState.setBubblePlacement(layout.placement)
+            updateState()
+        }
+        panel.displayIfNeeded()
+        panel.orderFrontRegardless()
+    }
+
+    private func syncDesktopPetAnchor(from panel: NSPanel) {
+        desktopPetAnchorPoint = DesktopPetLayout.mascotAnchor(
+            in: panel.frame,
+            placement: desktopPetState.bubblePlacement,
+            metrics: desktopPetLayoutMetrics
+        )
+    }
+
+    private func defaultDesktopPetAnchor(in visible: NSRect, margin: CGFloat) -> NSPoint {
+        NSPoint(
+            x: visible.maxX - desktopPetIdlePanelSize.width / 2 - margin,
+            y: visible.minY + desktopPetLayoutMetrics.mascotAnchorYOffset + margin
+        )
+    }
+
+    private func isDesktopPetBubbleSize(_ size: NSSize) -> Bool {
+        size.width > desktopPetIdlePanelSize.width + 1
+            || size.height > desktopPetIdlePanelSize.height + 1
+    }
+
+    private func withoutDesktopPetTransitionAnimation(_ body: () -> Void) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, body)
     }
 
     private func startAutoDismissTimer() {
