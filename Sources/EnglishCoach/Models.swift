@@ -75,6 +75,28 @@ enum HotkeyStatus {
     case failed(String)
 }
 
+/// Which engine handles sentence-level / dictionary-miss translation. Word and
+/// short-phrase lookups always try the offline ECDICT dictionary first,
+/// regardless of this setting.
+enum TranslationEngine: String, CaseIterable, Identifiable, Codable {
+    /// Local Claude Code CLI — reuses the user's login, no API key.
+    case localCLI
+    /// Claude API with a user-supplied API key.
+    case apiKey
+    /// No AI provider; fall straight through to the free MyMemory service.
+    case freeOnly
+
+    var id: String { rawValue }
+
+    var displayLabel: String {
+        switch self {
+        case .localCLI: return "本地 Claude CLI（无需 Key）"
+        case .apiKey: return "Claude API Key"
+        case .freeOnly: return "仅免费（MyMemory）"
+        }
+    }
+}
+
 /// Where the translation result shows up after ⌘C⌘C triggers it.
 enum TranslationPresentation: String, CaseIterable, Identifiable, Codable {
     case floating

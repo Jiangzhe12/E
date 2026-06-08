@@ -38,6 +38,13 @@ final class AppModel: ObservableObject {
             syncDesktopPetVisibility()
         }
     }
+    @Published var translationEngine: TranslationEngine = .localCLI {
+        didSet {
+            guard oldValue != translationEngine else { return }
+            defaults.set(translationEngine.rawValue, forKey: Self.translationEngineKey)
+            pushClaudeConfiguration()
+        }
+    }
     @Published var claudeAPIKey: String = "" {
         didSet {
             guard oldValue != claudeAPIKey else { return }
@@ -96,6 +103,7 @@ final class AppModel: ObservableObject {
     private static let learningAttemptsKey = "learning.attempts.v1"
     private static let lessonProgressStatesKey = "learning.lessonProgressStates.v1"
     private static let translationPresentationModeKey = "translation.presentationMode"
+    private static let translationEngineKey = "translation.engine"
     private static let claudeAPIKeyKey = "translation.claudeAPIKey"
     private static let claudeModelKey = "translation.claudeModel"
     private static let reminderEnabledKey = "reminder.enabled"
@@ -145,6 +153,10 @@ final class AppModel: ObservableObject {
             self.translationPresentationMode = mode
         }
 
+        if let raw = defaults.string(forKey: Self.translationEngineKey),
+           let engine = TranslationEngine(rawValue: raw) {
+            self.translationEngine = engine
+        }
         self.claudeAPIKey = defaults.string(forKey: Self.claudeAPIKeyKey) ?? ""
         if let storedModel = defaults.string(forKey: Self.claudeModelKey), !storedModel.isEmpty {
             self.claudeModel = storedModel
@@ -504,10 +516,11 @@ final class AppModel: ObservableObject {
     /// Forward the current Claude API key + model into the translation
     /// service actor. Called at startup and whenever settings change.
     private func pushClaudeConfiguration() {
+        let engine = translationEngine
         let apiKey = claudeAPIKey
         let model = claudeModel
         Task {
-            await translationService.updateClaudeConfiguration(apiKey: apiKey, model: model)
+            await translationService.updateConfiguration(engine: engine, apiKey: apiKey, model: model)
         }
     }
 

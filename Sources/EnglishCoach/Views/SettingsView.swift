@@ -20,24 +20,46 @@ struct SettingsView: View {
             }
 
             Section("AI 翻译（Claude）") {
-                SecureField("API Key（sk-ant-...）", text: $model.claudeAPIKey)
-                    .textFieldStyle(.roundedBorder)
-
-                Picker("模型", selection: $model.claudeModel) {
-                    ForEach(ClaudeTranslationProvider.availableModels, id: \.self) { name in
-                        Text(name).tag(name)
+                Picker("翻译引擎", selection: $model.translationEngine) {
+                    ForEach(TranslationEngine.allCases) { engine in
+                        Text(engine.displayLabel).tag(engine)
                     }
                 }
 
-                if model.claudeAPIKey.trimmed.isEmpty {
-                    Label("未配置 API Key，句子翻译将使用免费的 MyMemory（质量一般）。", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label("已启用 Claude 翻译：句子和词典未收录的内容都会由 Claude 翻译并附讲解。", systemImage: "sparkles")
+                if model.translationEngine != .freeOnly {
+                    Picker("模型", selection: $model.claudeModel) {
+                        ForEach(ClaudeTranslationProvider.availableModels, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
+                    }
+                }
+
+                switch model.translationEngine {
+                case .localCLI:
+                    Label("使用本机已登录的 Claude Code，无需 API Key（句子翻译约需几秒）。", systemImage: "terminal")
                         .font(.caption)
                         .foregroundStyle(Color(red: 0.22, green: 0.58, blue: 0.32))
+                    Text("前提：这台机器已安装 Claude Code 并完成登录。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .apiKey:
+                    SecureField("API Key（sk-ant-...）", text: $model.claudeAPIKey)
+                        .textFieldStyle(.roundedBorder)
+                    if model.claudeAPIKey.trimmed.isEmpty {
+                        Label("未填写 API Key，句子翻译将回退到免费的 MyMemory（质量一般）。", systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label("已启用 Claude API：句子和词典未收录内容都会由 Claude 翻译并附讲解。", systemImage: "sparkles")
+                            .font(.caption)
+                            .foregroundStyle(Color(red: 0.22, green: 0.58, blue: 0.32))
+                    }
+                case .freeOnly:
+                    Label("仅使用免费的 MyMemory 在线翻译，不调用 Claude。", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+
                 Text("单词和短语优先查内置 ECDICT 离线词典（秒查、免费）；结果卡片会标注每次翻译的来源。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

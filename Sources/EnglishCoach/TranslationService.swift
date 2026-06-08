@@ -63,24 +63,44 @@ actor TranslationService {
 
     private let enableOnlineFallback: Bool
     private let ecdict = ECDICTDictionary()
-    private var claude: ClaudeTranslationProvider?
+    private var claudeAPI: ClaudeTranslationProvider?
+    private var claudeCLI: ClaudeCLITranslationProvider?
 
     init(enableOnlineFallback: Bool) {
         self.enableOnlineFallback = enableOnlineFallback
     }
 
-    /// Called at startup and whenever the user edits the API key / model in
-    /// settings. An empty key disables the Claude provider.
-    func updateClaudeConfiguration(apiKey: String, model: String) {
-        let trimmedKey = apiKey.trimmed
-        if trimmedKey.isEmpty {
-            claude = nil
-        } else {
-            claude = ClaudeTranslationProvider(
-                apiKey: trimmedKey,
-                model: model.trimmed.isEmpty ? ClaudeTranslationProvider.defaultModel : model.trimmed
-            )
+    /// Called at startup and whenever the user changes the translation engine,
+    /// API key, or model in settings. Selects which AI provider (if any) sits
+    /// between the offline dictionary and the MyMemory fallback.
+    func updateConfiguration(engine: TranslationEngine, apiKey: String, model: String) {
+        let resolvedModel = model.trimmed.isEmpty ? ClaudeTranslationShared.defaultModel : model.trimmed
+        switch engine {
+        case .localCLI:
+            claudeCLI = ClaudeCLITranslationProvider(model: resolvedModel)
+            claudeAPI = nil
+        case .apiKey:
+            let trimmedKey = apiKey.trimmed
+            claudeAPI = trimmedKey.isEmpty
+                ? nil
+                : ClaudeTranslationProvider(apiKey: trimmedKey, model: resolvedModel)
+            claudeCLI = nil
+        case .freeOnly:
+            claudeAPI = nil
+            claudeCLI = nil
         }
+    }
+
+    /// Runs whichever Claude provider is configured (API or local CLI), or
+    /// returns nil when the engine is free-only / unconfigured.
+    private func aiTranslate(_ text: String, direction: TranslationDirection) async throws -> TranslationResult? {
+        if let claudeAPI {
+            return try await claudeAPI.translate(text, direction: direction)
+        }
+        if let claudeCLI {
+            return try await claudeCLI.translate(text, direction: direction)
+        }
+        return nil
     }
 
     func translate(_ text: String, direction override: TranslationDirection? = nil) async throws -> TranslationOutcome {
@@ -106,16 +126,15 @@ actor TranslationService {
             return Self.makeFallbackOutcome(for: trimmed, direction: direction, notices: notices, onlineEnabled: false)
         }
 
-        // 2. Claude API — best quality, includes learner-oriented explanations.
-        if let claude {
-            do {
-                let result = try await claude.translate(trimmed, direction: direction)
+        // 2. Claude (API or local CLI) — best quality, learner-oriented extras.
+        do {
+            if let result = try await aiTranslate(trimmed, direction: direction) {
                 return TranslationOutcome(result: result, onlineNotice: nil)
-            } catch {
-                let reason = Self.describeOnlineError(error)
-                NSLog("[TranslationService] Claude lookup failed: %@", reason)
-                notices.append("Claude 翻译失败（\(reason)），已回退到 MyMemory。")
             }
+        } catch {
+            let reason = Self.describeOnlineError(error)
+            NSLog("[TranslationService] Claude lookup failed: %@", reason)
+            notices.append("Claude 翻译失败（\(reason)），已回退到 MyMemory。")
         }
 
         // 3. MyMemory — free machine translation, no key required.
@@ -188,6 +207,9 @@ actor TranslationService {
     private static func describeOnlineError(_ error: Error) -> String {
         if let claudeError = error as? ClaudeTranslationError {
             return claudeError.localizedDescription
+        }
+        if let cliError = error as? ClaudeCLIError {
+            return cliError.localizedDescription
         }
         if let urlError = error as? URLError {
             switch urlError.code {
