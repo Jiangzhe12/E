@@ -238,6 +238,7 @@ struct ContentView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(selectedTab == tab ? Color.white.opacity(0.72) : Color.clear)
                     )
+                    .hoverAffordance(cornerRadius: 8)
                     .onTapGesture {
                         selectedTab = tab
                     }
@@ -1056,6 +1057,7 @@ struct ContentView: View {
             )
         }
         .buttonStyle(.plain)
+        .hoverAffordance(cornerRadius: 10)
     }
 
     private var translationCard: some View {
@@ -1093,6 +1095,20 @@ struct ContentView: View {
                         }
                         .buttonStyle(.borderless)
                         .help("朗读原文")
+
+                        Spacer()
+
+                        if model.canAddLookupToLearning(result) {
+                            Button {
+                                model.addLookupToLearning(result)
+                            } label: {
+                                Label("加入生词本", systemImage: "text.badge.plus")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(Color(red: 0.20, green: 0.62, blue: 0.40))
+                            .help("把这个单词加入每日学习与复习")
+                        }
                     }
 
                     Text(result.translatedText)
@@ -1113,6 +1129,26 @@ struct ContentView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                    }
+
+                    if let context = model.latestLookupContext,
+                       !context.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Label("原句", systemImage: "quote.opening")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                            Text(context)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.accentColor.opacity(0.06))
+                        )
                     }
 
                     Text("来源：\(result.provider)")
@@ -1212,6 +1248,14 @@ private struct HistoryRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
+                if let context = item.context, !context.isEmpty {
+                    Text("“\(context)”")
+                        .font(.caption)
+                        .italic()
+                        .foregroundStyle(.secondary.opacity(0.85))
+                        .lineLimit(2)
+                }
+
                 HStack(spacing: 8) {
                     if let source = item.sourceApp {
                         Text(source)
@@ -1243,17 +1287,65 @@ private struct HistoryRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    isSelected
-                        ? Color(red: 0.88, green: 0.95, blue: 1.0)
-                        : Color.white.opacity(0.70)
-                )
+                .fill(rowBackgroundColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(isSelected ? Color(red: 0.72, green: 0.86, blue: 0.98) : Color.clear, lineWidth: 1)
                 )
         )
+        .animation(.easeOut(duration: 0.12), value: isHovered)
         .onHover(perform: onHover)
+        .pointerOnHover()
+    }
+
+    private var rowBackgroundColor: Color {
+        if isSelected {
+            return Color(red: 0.88, green: 0.95, blue: 1.0)
+        }
+        if isHovered {
+            return Color(red: 0.93, green: 0.97, blue: 1.0)
+        }
+        return Color.white.opacity(0.70)
+    }
+}
+
+/// Pointer cursor + a subtle accent border on hover, for custom tappable areas
+/// (tabs, answer rows) that don't get the system button's hover treatment.
+private struct HoverAffordance: ViewModifier {
+    var cornerRadius: CGFloat
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(hovering ? 0.45 : 0), lineWidth: 1.5)
+            )
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .onHover { isHovering in
+                hovering = isHovering
+                if isHovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+            }
+    }
+}
+
+/// Just the pointing-hand cursor on hover, for rows that already have their own
+/// visible hover state (e.g. history rows revealing a delete button).
+private struct PointerOnHover: ViewModifier {
+    func body(content: Content) -> some View {
+        content.onHover { isHovering in
+            if isHovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+        }
+    }
+}
+
+private extension View {
+    func hoverAffordance(cornerRadius: CGFloat = 8) -> some View {
+        modifier(HoverAffordance(cornerRadius: cornerRadius))
+    }
+
+    func pointerOnHover() -> some View {
+        modifier(PointerOnHover())
     }
 }
 

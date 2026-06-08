@@ -5,6 +5,8 @@ import Foundation
 final class AppModel: ObservableObject {
     @Published var statusMessage: String = "在任意应用中连续按两次复制（⌘C, ⌘C）即可翻译"
     @Published var latestResult: TranslationResult?
+    /// Sentence the latest lookup came from, when captured from the source app.
+    @Published var latestLookupContext: String?
     @Published var history: [LookupHistoryItem] = []
     @Published var searchText: String = ""
     @Published var manualInput: String = ""
@@ -96,6 +98,7 @@ final class AppModel: ObservableObject {
     private struct PendingRetryRequest {
         let text: String
         let sourceApp: String?
+        let context: String?
         let presentation: PresentationTarget
         let direction: TranslationDirection?
     }
@@ -188,6 +191,9 @@ final class AppModel: ObservableObject {
         }
         self.popoverController.onDailyWordPractice = { [weak self] card in
             self?.practiceDesktopDailyWord(card)
+        }
+        self.popoverController.onAddToLearning = { [weak self] result in
+            self?.addLookupToLearningFromBubble(result)
         }
 
         self.hotkeyManager.onHotKeyPressed = { [weak self] in
@@ -399,10 +405,10 @@ final class AppModel: ObservableObject {
     var wordBankScaleDescription: String {
         let core = CommonWordBank.coreWords.count
         let extended = CommonWordBank.extendedWords.count
-        if CommonWordBank.extendedWordsSourceAvailable {
-            return "词库规模：\(core + extended) 词（核心 \(core) + 扩展 \(extended)）"
+        if CommonWordBank.wordSourceAvailable {
+            return "词库规模：\(core + extended) 词（CET-4 核心 \(core) + CET-6 扩展 \(extended)）"
         } else {
-            return "词库规模：\(core) 词（仅核心；扩展词库来源 /usr/share/dict/web2 不可用）"
+            return "词库规模：0 词（词库来源 ecdict.db 不可用，请运行 scripts/fetch_ecdict.sh）"
         }
     }
 
@@ -511,6 +517,111 @@ final class AppModel: ObservableObject {
         wordCarouselStore.unmarkMastered(word: word)
         refreshWordCarouselIfNeeded()
         statusMessage = "已取消熟悉：\(word)，会重新进入后续学习"
+    }
+
+    /// Whether a looked-up result can be added to the word-learning deck. Only
+    /// single English words qualify — the deck and its SRS are word-based.
+    func canAddLookupToLearning(_ result: TranslationResult) -> Bool {
+        Self.singleEnglishWord(from: result.originalText) != nil
+    }
+
+    /// Outcome of adding a lookup to the learning deck, paired with the word so
+    /// callers can build a message. `.ineligible` means the lookup wasn't a
+    /// single English word.
+    enum LearningAddResult {
+        case added(String)
+        case alreadyLearning(String)
+        case alreadyMastered(String)
+        case ineligible
+
+        var statusMessage: String {
+            switch self {
+            case .added(let w): return "已加入生词本：\(w)，进入每日学习与复习"
+            case .alreadyLearning(let w): return "\(w) 已在学习列表中"
+            case .alreadyMastered(let w): return "\(w) 已经掌握啦，如需重学可在「累计熟悉」里取消熟悉"
+            case .ineligible: return "只能把单个英文单词加入生词本"
+            }
+        }
+
+        var feedbackTitle: String {
+            switch self {
+            case .added: return "已加入生词本"
+            case .alreadyLearning: return "已在学习中"
+            case .alreadyMastered: return "已经掌握"
+            case .ineligible: return "无法加入"
+            }
+        }
+
+        var feedbackMessage: String {
+            switch self {
+            case .added(let w): return "\(w) 已进入每日学习与复习"
+            case .alreadyLearning(let w): return "\(w) 已经在学习列表里了"
+            case .alreadyMastered(let w): return "\(w) 已掌握，可在「累计熟悉」取消熟悉重学"
+            case .ineligible: return "只能加入单个英文单词"
+            }
+        }
+    }
+
+    /// Add a looked-up word to the daily learning deck + SRS. The translation we
+    /// already have is cached so the word card renders instantly without a
+    /// second network round-trip.
+    @discardableResult
+    private func performAddToLearning(_ result: TranslationResult) -> LearningAddResult {
+        guard let word = Self.singleEnglishWord(from: result.originalText) else {
+            return .ineligible
+        }
+
+        if wordDefinitionCache[word] == nil {
+            wordDefinitionCache[word] = result
+        }
+
+        let outcome = wordCarouselStore.addToLearning(word: word)
+        refreshWordCarouselIfNeeded()
+
+        switch outcome {
+        case .added: return .added(word)
+        case .alreadyLearning: return .alreadyLearning(word)
+        case .alreadyMastered: return .alreadyMastered(word)
+        }
+    }
+
+    /// Used by the main window / quick-translate panel, which surface feedback
+    /// through `statusMessage` and their own inline UI.
+    @discardableResult
+    func addLookupToLearning(_ result: TranslationResult) -> Bool {
+        let outcome = performAddToLearning(result)
+        statusMessage = outcome.statusMessage
+        if case .added = outcome { return true }
+        return false
+    }
+
+    /// Used by the floating desktop-pet bubble: shows a result bubble so the
+    /// click has visible success/failure feedback even with no main window open.
+    func addLookupToLearningFromBubble(_ result: TranslationResult) {
+        let outcome = performAddToLearning(result)
+        statusMessage = outcome.statusMessage
+        popoverController.presentFeedback(
+            title: outcome.feedbackTitle,
+            message: outcome.feedbackMessage
+        )
+    }
+
+    /// Normalizes a single English word (letters, optional internal `-`/`'`) to
+    /// lowercase. Returns `nil` for phrases, sentences, or non-Latin text.
+    private static func singleEnglishWord(from text: String) -> String? {
+        let trimmed = text.trimmed
+        guard !trimmed.isEmpty, trimmed.count <= 40 else { return nil }
+        guard !trimmed.contains(where: { $0 == " " || $0 == "\n" || $0 == "\t" }) else { return nil }
+
+        let allowed = CharacterSet.letters
+            .union(CharacterSet(charactersIn: "-'"))
+        guard trimmed.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
+        // Require at least one ASCII letter so non-Latin strings are rejected.
+        let asciiLetters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        guard trimmed.unicodeScalars.contains(where: { asciiLetters.contains($0) }) else {
+            return nil
+        }
+        return trimmed.lowercased()
     }
 
     /// Read text aloud via the shared SpeechService. Used by the speaker
@@ -634,9 +745,10 @@ final class AppModel: ObservableObject {
             translatedText: item.translation,
             phonetic: item.phonetic,
             explanations: item.explanations,
-            provider: "History",
+            provider: item.provider ?? "历史记录",
             direction: TranslationService.detectDirection(item.rawText)
         )
+        latestLookupContext = item.context
         statusMessage = "已加载历史记录：\(item.rawText)"
     }
 
@@ -677,6 +789,7 @@ final class AppModel: ObservableObject {
                 try historyStore.insertLookup(
                     rawText: cleaned,
                     sourceApp: "Quick Translate",
+                    context: nil,
                     result: outcome.result
                 )
                 history = try historyStore.fetchRecent(limit: 300)
@@ -881,6 +994,7 @@ final class AppModel: ObservableObject {
                 await translateAndRecord(
                     text: snapshot.text,
                     sourceApp: snapshot.sourceAppName,
+                    context: snapshot.context,
                     presentation: presentation
                 )
                 return
@@ -914,6 +1028,7 @@ final class AppModel: ObservableObject {
     private func translateAndRecord(
         text: String,
         sourceApp: String?,
+        context: String? = nil,
         presentation: PresentationTarget,
         direction: TranslationDirection? = nil
     ) async {
@@ -944,11 +1059,13 @@ final class AppModel: ObservableObject {
         do {
             let outcome = try await translationService.translate(cleanedText, direction: direction)
             latestResult = outcome.result
+            latestLookupContext = context
 
             if let historyStore {
                 try historyStore.insertLookup(
                     rawText: cleanedText,
                     sourceApp: sourceApp,
+                    context: context,
                     result: outcome.result
                 )
                 history = try historyStore.fetchRecent(limit: 300)
@@ -962,6 +1079,7 @@ final class AppModel: ObservableObject {
                 lastFailedRequest = PendingRetryRequest(
                     text: cleanedText,
                     sourceApp: sourceApp,
+                    context: context,
                     presentation: presentation,
                     direction: direction
                 )
@@ -994,6 +1112,7 @@ final class AppModel: ObservableObject {
             lastFailedRequest = PendingRetryRequest(
                 text: cleanedText,
                 sourceApp: sourceApp,
+                context: context,
                 presentation: presentation,
                 direction: direction
             )
@@ -1012,6 +1131,7 @@ final class AppModel: ObservableObject {
         await translateAndRecord(
             text: request.text,
             sourceApp: request.sourceApp,
+            context: request.context,
             presentation: request.presentation,
             direction: request.direction
         )
@@ -1021,11 +1141,12 @@ final class AppModel: ObservableObject {
     private func translateAndRecord(
         text: String,
         sourceApp: String?,
+        context: String? = nil,
         presentation: TranslationPresentation,
         direction: TranslationDirection? = nil
     ) async {
         let target: PresentationTarget = presentation == .floating ? .floating : .mainWindow
-        await translateAndRecord(text: text, sourceApp: sourceApp, presentation: target, direction: direction)
+        await translateAndRecord(text: text, sourceApp: sourceApp, context: context, presentation: target, direction: direction)
     }
 
     private func openMainWindow() {

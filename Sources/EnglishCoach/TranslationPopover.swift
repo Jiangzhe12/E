@@ -26,6 +26,7 @@ final class TranslationPopoverController {
     var onRequestLastTranslation: (() -> Void)?
     var onDailyWordComplete: ((DesktopWordCard) -> Void)?
     var onDailyWordPractice: ((DesktopWordCard) -> Void)?
+    var onAddToLearning: ((TranslationResult) -> Void)?
 
     private var quickTranslatePanel: NSPanel?
     private let quickPanelWidth: CGFloat = 420
@@ -166,7 +167,7 @@ final class TranslationPopoverController {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
                     pasteboard.setString(result.translatedText, forType: .string)
-                    self?.dismiss()
+                    self?.presentFeedback(title: "已复制", message: result.translatedText)
                 },
                 onOpenMainWindow: { [weak self] in
                     self?.onOpenMainWindow?()
@@ -175,6 +176,9 @@ final class TranslationPopoverController {
                 onSpeak: { [weak self] result in
                     let lang = result.direction == .chineseToEnglish ? "zh-CN" : "en-US"
                     self?.speechService.speak(result.originalText, languageCode: lang)
+                },
+                onAddToLearning: { [weak self] result in
+                    self?.onAddToLearning?(result)
                 },
                 onCloseBubble: { [weak self] in
                     self?.dismiss()
@@ -210,6 +214,10 @@ final class TranslationPopoverController {
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = true
+        // Without this a non-activating panel never forwards mouse-moved events,
+        // so SwiftUI `.onHover` / button hover highlights inside the bubble never
+        // fire. Enable it so the bubble's clickable controls show hover feedback.
+        panel.acceptsMouseMovedEvents = true
         panel.level = .floating
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -547,6 +555,16 @@ struct QuickTranslatePopoverView: View {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .help("朗读原文")
+                        if model.canAddLookupToLearning(result) {
+                            Button {
+                                model.addLookupToLearning(result)
+                            } label: {
+                                Image(systemName: "text.badge.plus")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("加入生词本")
+                        }
                         Button("展开到主窗口", action: onOpenMainWindow)
                             .buttonStyle(.bordered)
                             .controlSize(.small)

@@ -65,8 +65,75 @@ final class SelectedTextService {
         }
 
         let sourceAppName = focusedApplicationName(systemWideElement: systemWideElement)
+        let context = surroundingSentence(for: focusedElement, selectedText: selectedText)
 
-        return SelectedTextSnapshot(text: selectedText, sourceAppName: sourceAppName)
+        return SelectedTextSnapshot(
+            text: selectedText,
+            sourceAppName: sourceAppName,
+            context: context
+        )
+    }
+
+    /// Best-effort capture of the sentence the selection sits inside, read from
+    /// the focused element's full text + selected range. Returns `nil` when the
+    /// element doesn't expose that data, or when the sentence isn't meaningfully
+    /// longer than the selection (e.g. the user already selected a whole line).
+    private func surroundingSentence(for element: AXUIElement, selectedText: String) -> String? {
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            &rangeRef
+        ) == .success,
+            let rangeRef,
+            CFGetTypeID(rangeRef) == AXValueGetTypeID()
+        else { return nil }
+
+        var cfRange = CFRange()
+        guard AXValueGetValue(rangeRef as! AXValue, .cfRange, &cfRange),
+              cfRange.location >= 0,
+              cfRange.length >= 0
+        else { return nil }
+
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXValueAttribute as CFString,
+            &valueRef
+        ) == .success,
+            let fullText = valueRef as? String,
+            !fullText.isEmpty
+        else { return nil }
+
+        let nsRange = NSRange(location: cfRange.location, length: cfRange.length)
+        guard let sentence = Self.enclosingSentence(in: fullText, selectionRange: nsRange) else {
+            return nil
+        }
+
+        // Only worth keeping if it adds context beyond the selection itself.
+        guard sentence.count > selectedText.trimmed.count else { return nil }
+        // Guard against pathologically long blobs (selection inside a giant
+        // textarea with no sentence punctuation).
+        guard sentence.count <= 500 else { return nil }
+        return sentence
+    }
+
+    /// Extracts the sentence in `fullText` that contains the start of `nsRange`.
+    static func enclosingSentence(in fullText: String, selectionRange nsRange: NSRange) -> String? {
+        guard let selection = Range(nsRange, in: fullText) else { return nil }
+
+        var found: String?
+        fullText.enumerateSubstrings(
+            in: fullText.startIndex ..< fullText.endIndex,
+            options: .bySentences
+        ) { substring, subRange, _, stop in
+            guard let substring else { return }
+            if subRange.contains(selection.lowerBound) || subRange.lowerBound == selection.lowerBound {
+                found = substring.trimmingCharacters(in: .whitespacesAndNewlines)
+                stop = true
+            }
+        }
+        return (found?.isEmpty == false) ? found : nil
     }
 
     /// Returns the screen position of the text cursor (caret) in the focused

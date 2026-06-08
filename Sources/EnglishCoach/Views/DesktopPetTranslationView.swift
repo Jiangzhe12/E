@@ -91,6 +91,7 @@ struct DesktopPetTranslationView: View {
     let onCopy: (TranslationResult) -> Void
     let onOpenMainWindow: () -> Void
     let onSpeak: (TranslationResult) -> Void
+    let onAddToLearning: (TranslationResult) -> Void
     let onCloseBubble: () -> Void
     let onPetTap: () -> Void
     let onPetSecondaryTap: () -> Void
@@ -182,6 +183,7 @@ struct DesktopPetTranslationView: View {
                     onCopy: onCopy,
                     onOpenMainWindow: onOpenMainWindow,
                     onSpeak: onSpeak,
+                    onAddToLearning: onAddToLearning,
                     onCloseBubble: onCloseBubble
                 )
                 .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
@@ -340,7 +342,19 @@ private struct DesktopPetTranslationBubbleView: View {
     let onCopy: (TranslationResult) -> Void
     let onOpenMainWindow: () -> Void
     let onSpeak: (TranslationResult) -> Void
+    let onAddToLearning: (TranslationResult) -> Void
     let onCloseBubble: () -> Void
+
+    /// "加入生词本" only makes sense for a single English word.
+    private var canAddToLearning: Bool {
+        let trimmed = result.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 40 else { return false }
+        guard !trimmed.contains(where: { $0 == " " || $0 == "\n" || $0 == "\t" }) else { return false }
+        return trimmed.unicodeScalars.contains { $0.value < 128 && CharacterSet.letters.contains($0) }
+            && trimmed.unicodeScalars.allSatisfy {
+                CharacterSet.letters.contains($0) || $0 == "-" || $0 == "'"
+            }
+    }
 
     var body: some View {
         DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
@@ -363,6 +377,7 @@ private struct DesktopPetTranslationBubbleView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(Color(red: 0.64, green: 0.78, blue: 0.95))
                     .help("关闭气泡")
+                    .bubbleClickableHover()
                 }
 
                 Text(content.originalText)
@@ -404,6 +419,7 @@ private struct DesktopPetTranslationBubbleView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
+                    .bubbleClickableHover()
 
                     Button {
                         onSpeak(result)
@@ -414,6 +430,20 @@ private struct DesktopPetTranslationBubbleView: View {
                     .controlSize(.small)
                     .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
                     .help("朗读原文")
+                    .bubbleClickableHover()
+
+                    if canAddToLearning {
+                        Button {
+                            onAddToLearning(result)
+                        } label: {
+                            Image(systemName: "text.badge.plus")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(Color(red: 0.46, green: 0.86, blue: 0.58))
+                        .help("加入生词本")
+                        .bubbleClickableHover()
+                    }
 
                     Button {
                         onOpenMainWindow()
@@ -423,6 +453,7 @@ private struct DesktopPetTranslationBubbleView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
+                    .bubbleClickableHover()
 
                     Spacer()
 
@@ -514,6 +545,7 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
                     .controlSize(.small)
                     .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
                     .help("朗读单词")
+                    .bubbleClickableHover()
 
                     Button {
                         onReveal()
@@ -523,11 +555,13 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
+                    .bubbleClickableHover()
 
                     Button("稍后", action: onLater)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
+                        .bubbleClickableHover()
                 }
             }
         }
@@ -589,16 +623,19 @@ private struct DesktopPetDailyWordMeaningBubbleView: View {
                     .controlSize(.small)
                     .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
                     .help("朗读")
+                    .bubbleClickableHover()
 
                     Button(primaryActionTitle, action: onComplete)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
+                        .bubbleClickableHover()
 
                     Button("再练", action: onPractice)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
+                        .bubbleClickableHover()
                 }
             }
         }
@@ -630,6 +667,34 @@ private struct DesktopPetFeedbackBubbleView: View {
     }
 }
 
+/// Adds a visible hover affordance (slight grow + brighten + pointer cursor) to
+/// a bubble's clickable controls. The bubble lives in a non-activating panel, so
+/// the stock button highlight is easy to miss; this makes "clickable" obvious.
+private struct BubbleClickableHover: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isHovering ? 1.08 : 1.0)
+            .brightness(isHovering ? 0.08 : 0)
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    NSCursor.pointingHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
+    }
+}
+
+private extension View {
+    func bubbleClickableHover() -> some View {
+        modifier(BubbleClickableHover())
+    }
+}
+
 private struct DesktopPetBubbleHeader: View {
     let icon: String
     let title: String
@@ -654,6 +719,7 @@ private struct DesktopPetBubbleHeader: View {
             .buttonStyle(.plain)
             .foregroundStyle(Color(red: 0.64, green: 0.78, blue: 0.95))
             .help("关闭气泡")
+            .bubbleClickableHover()
         }
     }
 }

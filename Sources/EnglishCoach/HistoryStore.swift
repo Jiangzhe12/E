@@ -44,6 +44,7 @@ final class HistoryStore {
     func insertLookup(
         rawText: String,
         sourceApp: String?,
+        context: String?,
         result: TranslationResult
     ) throws {
         try queue.sync {
@@ -55,8 +56,10 @@ final class HistoryStore {
                 translation,
                 phonetic,
                 explanations_json,
+                context,
+                provider,
                 created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """
 
             var statement: OpaquePointer?
@@ -80,7 +83,9 @@ final class HistoryStore {
             bind(text: result.translatedText, to: 4, statement: statement)
             bind(text: result.phonetic, to: 5, statement: statement)
             bind(text: explanationsJSON, to: 6, statement: statement)
-            bind(text: iso8601Formatter.string(from: Date()), to: 7, statement: statement)
+            bind(text: context, to: 7, statement: statement)
+            bind(text: result.provider, to: 8, statement: statement)
+            bind(text: iso8601Formatter.string(from: Date()), to: 9, statement: statement)
 
             guard sqlite3_step(statement) == SQLITE_DONE else {
                 throw HistoryStoreError.executeFailed(lastErrorMessage())
@@ -99,6 +104,8 @@ final class HistoryStore {
                 translation,
                 phonetic,
                 explanations_json,
+                context,
+                provider,
                 created_at
             FROM lookup_history
             ORDER BY datetime(created_at) DESC
@@ -122,7 +129,9 @@ final class HistoryStore {
                 let translation = stringColumn(statement, index: 4)
                 let phonetic = optionalStringColumn(statement, index: 5)
                 let explanationsJSON = stringColumn(statement, index: 6)
-                let createdAtRaw = stringColumn(statement, index: 7)
+                let context = optionalStringColumn(statement, index: 7)
+                let provider = optionalStringColumn(statement, index: 8)
+                let createdAtRaw = stringColumn(statement, index: 9)
                 let date = iso8601Formatter.date(from: createdAtRaw) ?? Date()
 
                 let explanations: [String]
@@ -141,6 +150,8 @@ final class HistoryStore {
                     translation: translation,
                     phonetic: phonetic,
                     explanations: explanations,
+                    context: context,
+                    provider: provider,
                     createdAt: date
                 )
                 items.append(item)
@@ -206,6 +217,8 @@ final class HistoryStore {
                 translation TEXT NOT NULL,
                 phonetic TEXT,
                 explanations_json TEXT NOT NULL,
+                context TEXT,
+                provider TEXT,
                 created_at TEXT NOT NULL
             );
 
@@ -216,7 +229,35 @@ final class HistoryStore {
             guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
                 throw HistoryStoreError.executeFailed(lastErrorMessage())
             }
+
+            // Migrate databases created before the `context` column existed.
+            // ADD COLUMN fails when the column is already present; that's
+            // expected on up-to-date databases, so the error is ignored.
+            if !columnExists(table: "lookup_history", column: "context") {
+                sqlite3_exec(db, "ALTER TABLE lookup_history ADD COLUMN context TEXT;", nil, nil, nil)
+            }
+            if !columnExists(table: "lookup_history", column: "provider") {
+                sqlite3_exec(db, "ALTER TABLE lookup_history ADD COLUMN provider TEXT;", nil, nil, nil)
+            }
         }
+    }
+
+    /// Checks `PRAGMA table_info` for a column. Must be called on `queue`.
+    private func columnExists(table: String, column: String) -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table));", -1, &statement, nil) == SQLITE_OK else {
+            return false
+        }
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            // Column 1 of table_info is the column name.
+            if let cName = sqlite3_column_text(statement, 1),
+               String(cString: cName) == column {
+                return true
+            }
+        }
+        return false
     }
 
     private func bind(text: String?, to index: Int32, statement: OpaquePointer?) {

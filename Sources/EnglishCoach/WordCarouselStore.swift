@@ -14,6 +14,13 @@ struct WordCarouselSnapshot {
 /// Stage 5 = graduated (won't come back for review).
 private let srsIntervalDays: [Int] = [1, 3, 7, 14, 30]
 
+/// Result of trying to add a looked-up word to the learning deck.
+enum AddToLearningOutcome {
+    case added
+    case alreadyLearning
+    case alreadyMastered
+}
+
 final class WordCarouselStore {
     /// Stored per-word state for the SRS scheduler.
     ///
@@ -63,6 +70,41 @@ final class WordCarouselStore {
         var todayWords: [String]
         var masteredWords: [String]
         var masteryRecords: [MasteryRecord]
+        /// Words the user explicitly added from a lookup. They stay in the
+        /// daily deck (beyond the normal quota) until mastered.
+        var customWords: [String]
+
+        init(
+            dayKey: String,
+            todayWords: [String],
+            masteredWords: [String],
+            masteryRecords: [MasteryRecord],
+            customWords: [String] = []
+        ) {
+            self.dayKey = dayKey
+            self.todayWords = todayWords
+            self.masteredWords = masteredWords
+            self.masteryRecords = masteryRecords
+            self.customWords = customWords
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case dayKey
+            case todayWords
+            case masteredWords
+            case masteryRecords
+            case customWords
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            dayKey = try c.decode(String.self, forKey: .dayKey)
+            todayWords = try c.decode([String].self, forKey: .todayWords)
+            masteredWords = try c.decode([String].self, forKey: .masteredWords)
+            masteryRecords = try c.decode([MasteryRecord].self, forKey: .masteryRecords)
+            // Pre-customWords states won't have this key.
+            customWords = try c.decodeIfPresent([String].self, forKey: .customWords) ?? []
+        }
     }
 
     private let defaults: UserDefaults
@@ -113,6 +155,18 @@ final class WordCarouselStore {
 
         persistState(state)
 
+        // User-added words ride along at the front of the deck, additively and
+        // regardless of the daily quota. They are kept out of the persisted
+        // `todayWords` (which stays bank-only so the quota refill stays sane)
+        // and merged into the returned deck here.
+        let pendingCustom = state.customWords.filter { !masteredSet.contains($0) }
+        var deckSeen = Set(state.todayWords)
+        var customPrefix: [String] = []
+        for word in pendingCustom where deckSeen.insert(word).inserted {
+            customPrefix.append(word)
+        }
+        let combinedTodayWords = customPrefix + state.todayWords
+
         let now = dateProvider()
         let todayMasteredCount = state.masteryRecords.filter {
             calendar.isDate($0.masteredAt, inSameDayAs: now)
@@ -130,7 +184,7 @@ final class WordCarouselStore {
 
         return WordCarouselSnapshot(
             dayKey: state.dayKey,
-            todayWords: state.todayWords,
+            todayWords: combinedTodayWords,
             reviewDueWords: reviewDueWords,
             masteredWords: Set(state.masteredWords),
             todayMasteredCount: todayMasteredCount,
@@ -200,6 +254,30 @@ final class WordCarouselStore {
         }
 
         persistState(state)
+    }
+
+    /// Add a looked-up word to the learning deck. It joins `customWords` and is
+    /// injected at the front of today's deck so it shows up immediately, then
+    /// follows the normal mastery + SRS lifecycle.
+    @discardableResult
+    func addToLearning(word: String) -> AddToLearningOutcome {
+        let normalized = Self.normalize(word)
+        guard !normalized.isEmpty else { return .alreadyLearning }
+
+        var state = loadState()
+        if Set(state.masteredWords).contains(normalized) {
+            return .alreadyMastered
+        }
+
+        let alreadyTracked = state.customWords.contains(normalized)
+            || state.todayWords.contains(normalized)
+
+        if !state.customWords.contains(normalized) {
+            state.customWords.append(normalized)
+            persistState(state)
+        }
+
+        return alreadyTracked ? .alreadyLearning : .added
     }
 
     /// User reported "still remember" on a review word. Bump it to the next
@@ -335,7 +413,8 @@ final class WordCarouselStore {
             dayKey: decoded.dayKey,
             todayWords: Self.uniqueWords(from: decoded.todayWords),
             masteredWords: Self.uniqueWords(from: decoded.masteredWords),
-            masteryRecords: decoded.masteryRecords
+            masteryRecords: decoded.masteryRecords,
+            customWords: Self.uniqueWords(from: decoded.customWords)
         )
     }
 

@@ -62,12 +62,22 @@ struct LookupHistoryItem: Identifiable {
     let translation: String
     let phonetic: String?
     let explanations: [String]
+    /// The sentence the looked-up text appeared in, when it could be captured
+    /// from the source app via Accessibility. `nil` for clipboard lookups or
+    /// when the selection already was a full sentence.
+    let context: String?
+    /// The engine that produced this translation (e.g. "本地 Claude CLI",
+    /// "ECDICT 离线词典"). `nil` for rows saved before this was tracked.
+    let provider: String?
     let createdAt: Date
 }
 
 struct SelectedTextSnapshot {
     let text: String
     let sourceAppName: String?
+    /// The surrounding sentence the selection came from, if it could be read
+    /// and is meaningfully longer than the selection itself.
+    let context: String?
 }
 
 enum HotkeyStatus {
