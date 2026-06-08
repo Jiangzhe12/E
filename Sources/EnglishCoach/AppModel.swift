@@ -86,6 +86,9 @@ final class AppModel: ObservableObject {
     private var wordDefinitionCache: [String: TranslationResult] = [:]
     private var loadingWordDefinitions: Set<String> = []
     private var lastFailedRequest: PendingRetryRequest?
+    /// The most recent translation that was shown in the floating pet bubble,
+    /// so right-clicking the pet can re-surface it.
+    private var lastFloatingResult: (result: TranslationResult, sourceApp: String?)?
 
     /// Captured payload of the most recent failing translation, kept so the
     /// "重试" button can replay the exact same call (text + source + where to
@@ -176,6 +179,9 @@ final class AppModel: ObservableObject {
         }
         self.popoverController.onRequestDailyWord = { [weak self] in
             self?.showDesktopDailyWordInvite()
+        }
+        self.popoverController.onRequestLastTranslation = { [weak self] in
+            self?.showLastTranslationBubble()
         }
         self.popoverController.onDailyWordComplete = { [weak self] card in
             self?.completeDesktopDailyWord(card)
@@ -545,6 +551,19 @@ final class AppModel: ObservableObject {
         case .mainWindow:
             popoverController.hideDesktopPet()
         }
+    }
+
+    /// Re-show the last floating translation when the user right-clicks the pet.
+    private func showLastTranslationBubble() {
+        guard let last = lastFloatingResult else {
+            popoverController.presentFeedback(title: "还没有翻译", message: "选中文本按 ⌘C⌘C 试试")
+            return
+        }
+        popoverController.present(
+            result: last.result,
+            sourceAppName: last.sourceApp,
+            near: bestPopoverPosition()
+        )
     }
 
     private func showDesktopDailyWordInvite() {
@@ -964,6 +983,7 @@ final class AppModel: ObservableObject {
 
             switch presentation {
             case .floating:
+                lastFloatingResult = (outcome.result, sourceApp)
                 popoverController.present(result: outcome.result, sourceAppName: sourceApp, near: bestPopoverPosition())
             case .mainWindow:
                 openMainWindow()

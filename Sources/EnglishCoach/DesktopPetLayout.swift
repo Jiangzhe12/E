@@ -24,7 +24,7 @@ struct DesktopPetBubblePlacement: Equatable {
 
 struct DesktopPetLayoutMetrics {
     var idlePanelSize = CGSize(width: 148, height: 156)
-    var bubblePanelSize = CGSize(width: 424, height: 316)
+    var bubblePanelSize = CGSize(width: 424, height: 432)
     var mascotTrailingInset: CGFloat = 72
     var mascotAnchorYOffset: CGFloat = 78
     var screenMargin: CGFloat = 8

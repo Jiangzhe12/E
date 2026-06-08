@@ -23,6 +23,7 @@ final class TranslationPopoverController {
 
     var onOpenMainWindow: (() -> Void)?
     var onRequestDailyWord: (() -> Void)?
+    var onRequestLastTranslation: (() -> Void)?
     var onDailyWordComplete: ((DesktopWordCard) -> Void)?
     var onDailyWordPractice: ((DesktopWordCard) -> Void)?
 
@@ -180,6 +181,9 @@ final class TranslationPopoverController {
                 },
                 onPetTap: { [weak self] in
                     self?.onRequestDailyWord?()
+                },
+                onPetSecondaryTap: { [weak self] in
+                    self?.onRequestLastTranslation?()
                 },
                 onShowDailyWordMeaning: { [weak self] card in
                     self?.desktopPetState.showDailyWordMeaning(card)

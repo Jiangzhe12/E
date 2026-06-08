@@ -93,6 +93,7 @@ struct DesktopPetTranslationView: View {
     let onSpeak: (TranslationResult) -> Void
     let onCloseBubble: () -> Void
     let onPetTap: () -> Void
+    let onPetSecondaryTap: () -> Void
     let onShowDailyWordMeaning: (DesktopWordCard) -> Void
     let onDailyWordComplete: (DesktopWordCard) -> Void
     let onDailyWordPractice: (DesktopWordCard) -> Void
@@ -104,7 +105,7 @@ struct DesktopPetTranslationView: View {
     private var panelSize: CGSize {
         !state.hasBubble
             ? CGSize(width: 148, height: 156)
-            : CGSize(width: 424, height: 316)
+            : CGSize(width: 424, height: 432)
     }
 
     private var contentAlignment: Alignment {
@@ -191,6 +192,7 @@ struct DesktopPetTranslationView: View {
                 tailOffset: bubbleTailOffset,
                 tailPosition: bubbleTailPosition,
                 onReveal: { onShowDailyWordMeaning(card) },
+                onSpeak: { onSpeakDailyWord(card) },
                 onLater: onCloseBubble
             )
             .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
@@ -231,11 +233,97 @@ struct DesktopPetTranslationView: View {
             .scaleEffect(isHovering ? 1.04 : 1.0, anchor: .bottom)
             .animation(.spring(response: 0.24, dampingFraction: 0.70), value: isHovering)
             .contentShape(Rectangle())
-            .onHover { hovering in
-                isHovering = hovering
+            .overlay(
+                PetMouseCatcher(
+                    toolTip: "左键：今日单词 · 右键：上次翻译",
+                    onLeftClick: onPetTap,
+                    onRightClick: onPetSecondaryTap,
+                    onHoverChange: { isHovering = $0 }
+                )
+            )
+    }
+}
+
+/// AppKit-backed mouse layer for the mascot. Owns left-click (tap), right-click,
+/// drag-to-move-the-panel, and hover in one place so SwiftUI gesture recognizers
+/// and AppKit right-click handling don't fight over the same view.
+private struct PetMouseCatcher: NSViewRepresentable {
+    let toolTip: String
+    let onLeftClick: () -> Void
+    let onRightClick: () -> Void
+    let onHoverChange: (Bool) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MouseView()
+        view.toolTip = toolTip
+        view.apply(onLeftClick: onLeftClick, onRightClick: onRightClick, onHoverChange: onHoverChange)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? MouseView else { return }
+        view.toolTip = toolTip
+        view.apply(onLeftClick: onLeftClick, onRightClick: onRightClick, onHoverChange: onHoverChange)
+    }
+
+    final class MouseView: NSView {
+        private var onLeftClick: (() -> Void)?
+        private var onRightClick: (() -> Void)?
+        private var onHoverChange: ((Bool) -> Void)?
+        private var trackingArea: NSTrackingArea?
+        private var didDrag = false
+
+        func apply(
+            onLeftClick: @escaping () -> Void,
+            onRightClick: @escaping () -> Void,
+            onHoverChange: @escaping (Bool) -> Void
+        ) {
+            self.onLeftClick = onLeftClick
+            self.onRightClick = onRightClick
+            self.onHoverChange = onHoverChange
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            didDrag = false
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            didDrag = true
+            // Let the user reposition the desktop pet by dragging it.
+            window?.performDrag(with: event)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            if !didDrag {
+                onLeftClick?()
             }
-            .onTapGesture(perform: onPetTap)
-            .help("今日单词")
+        }
+
+        override func rightMouseDown(with event: NSEvent) {
+            onRightClick?()
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+            let area = NSTrackingArea(
+                rect: bounds,
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self
+            )
+            addTrackingArea(area)
+            trackingArea = area
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            onHoverChange?(true)
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            onHoverChange?(false)
+        }
     }
 }
 
@@ -391,6 +479,7 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
     let tailOffset: CGFloat
     let tailPosition: DesktopPetBubbleTailPosition
     let onReveal: () -> Void
+    let onSpeak: () -> Void
     let onLater: () -> Void
 
     var body: some View {
@@ -416,6 +505,16 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
                 }
 
                 HStack(spacing: 8) {
+                    Button {
+                        onSpeak()
+                    } label: {
+                        Image(systemName: "speaker.wave.2.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
+                    .help("朗读单词")
+
                     Button {
                         onReveal()
                     } label: {
