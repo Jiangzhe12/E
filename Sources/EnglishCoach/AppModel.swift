@@ -33,6 +33,22 @@ final class AppModel: ObservableObject {
     @Published var allMasteredWords: [String] = []
     @Published var todayReviewCount: Int = 0
 
+    // MARK: - 会议口语句块（学习路线 · 关卡1）
+    @Published var meetingPhraseCards: [MeetingPhraseCard] = []
+    @Published var currentMeetingPhraseIndex: Int = 0
+    @Published var meetingPhraseTodayCount: Int = 0
+    @Published var meetingPhraseTodayMasteredCount: Int = 0
+    @Published var meetingPhraseTotalMasteredCount: Int = 0
+    @Published var meetingPhraseReviewCount: Int = 0
+
+    // MARK: - 中译英产出 + AI 批改（学习路线 · 关卡3）
+    @Published var currentDrill: ProductionDrill?
+    @Published var drillInput: String = ""
+    @Published var isGradingDrill: Bool = false
+    @Published var drillGrade: ProductionGrade?
+    @Published var drillGradeError: String?
+    @Published var drillsGradedToday: Int = 0
+
     @Published var translationPresentationMode: TranslationPresentation = .floating {
         didSet {
             guard oldValue != translationPresentationMode else { return }
@@ -76,6 +92,9 @@ final class AppModel: ObservableObject {
     private let historyStore: HistoryStore?
     private let defaults: UserDefaults
     private let wordCarouselStore: WordCarouselStore
+    /// Reuses the same SRS engine as the word deck, keyed independently, to
+    /// schedule meeting-phrase chunks.
+    private let meetingPhraseStore: WordCarouselStore
     private let calendar = Calendar.current
     private let popoverController = TranslationPopoverController()
     private let reminderScheduler = ReminderScheduler()
@@ -83,6 +102,12 @@ final class AppModel: ObservableObject {
     private let servicesProvider = ServicesProvider()
 
     private var lessonSeedOffset: Int = 0
+    /// Index into `ProductionDrillBank.all` for the current drill; persisted so
+    /// drills continue where the user left off across launches.
+    private var drillIndex: Int = 0
+    /// Timestamps of graded production attempts — feeds the activity heatmap and
+    /// the "今日已练 N 句" counter.
+    private var productionDrillDates: [Date] = []
     private var lastCompletedLearningDate: Date?
     private var lessonProgressStates: [String: LessonProgressState] = [:]
     private var wordDefinitionCache: [String: TranslationResult] = [:]
@@ -108,6 +133,8 @@ final class AppModel: ObservableObject {
     private static let lastCompletedDateKey = "learning.lastCompletedDate"
     private static let learningAttemptsKey = "learning.attempts.v1"
     private static let lessonProgressStatesKey = "learning.lessonProgressStates.v1"
+    private static let drillIndexKey = "productionDrill.index.v1"
+    private static let drillDatesKey = "productionDrill.dates.v1"
     private static let translationPresentationModeKey = "translation.presentationMode"
     private static let translationEngineKey = "translation.engine"
     private static let claudeAPIKeyKey = "translation.claudeAPIKey"
@@ -141,6 +168,13 @@ final class AppModel: ObservableObject {
             coreWords: CommonWordBank.coreWords,
             extendedWords: CommonWordBank.extendedWords,
             dailyQuota: 20
+        )
+        self.meetingPhraseStore = WordCarouselStore(
+            defaults: defaults,
+            coreWords: MeetingPhraseBank.allIDs,
+            extendedWords: [],
+            dailyQuota: 6,
+            stateKey: "meetingPhrase.state.v1"
         )
 
         hotkeyManager.setDoubleCopyInterval(0.8)
@@ -228,6 +262,8 @@ final class AppModel: ObservableObject {
         loadLearningProgress()
         refreshLessonForSelectedTopic()
         refreshWordCarouselIfNeeded()
+        refreshMeetingPhrasesIfNeeded()
+        loadProductionDrillState()
 
         Task {
             await refreshHistory()
@@ -326,6 +362,27 @@ final class AppModel: ObservableObject {
         return base
     }
 
+    var currentMeetingPhraseCard: MeetingPhraseCard? {
+        guard !meetingPhraseCards.isEmpty else { return nil }
+        if meetingPhraseCards.indices.contains(currentMeetingPhraseIndex) {
+            return meetingPhraseCards[currentMeetingPhraseIndex]
+        }
+        return meetingPhraseCards.first
+    }
+
+    var meetingPhraseProgressText: String {
+        guard !meetingPhraseCards.isEmpty else { return "今日句块已全部掌握" }
+        let shownIndex = min(currentMeetingPhraseIndex, meetingPhraseCards.count - 1) + 1
+        let base = "今日句块 \(shownIndex)/\(meetingPhraseCards.count)"
+        if meetingPhraseReviewCount > 0 {
+            return "\(base) · 复习 \(meetingPhraseReviewCount)"
+        }
+        return base
+    }
+
+    /// Total chunks in the bank, for the "路线进度" line.
+    var meetingPhraseBankTotal: Int { MeetingPhraseBank.cards.count }
+
     /// Aggregate activity events per calendar day, keyed by `yyyy-MM-dd`.
     /// Combines translations, interest learning attempts, and newly mastered
     /// words into a single count so the heatmap can color one cell per day.
@@ -338,6 +395,12 @@ final class AppModel: ObservableObject {
             counts[Self.dayKey(for: attempt.createdAt, calendar: calendar), default: 0] += 1
         }
         for date in wordCarouselStore.masteryDates() {
+            counts[Self.dayKey(for: date, calendar: calendar), default: 0] += 1
+        }
+        for date in meetingPhraseStore.masteryDates() {
+            counts[Self.dayKey(for: date, calendar: calendar), default: 0] += 1
+        }
+        for date in productionDrillDates {
             counts[Self.dayKey(for: date, calendar: calendar), default: 0] += 1
         }
         return counts
@@ -392,7 +455,8 @@ final class AppModel: ObservableObject {
     /// mastered yet. This drives the Dock badge.
     var pendingLearningTaskCount: Int {
         let unmasteredToday = max(0, todayWordDeckCount - todayMasteredWordCount)
-        return todayReviewCount + unmasteredToday
+        let unmasteredPhrases = max(0, meetingPhraseTodayCount - meetingPhraseTodayMasteredCount)
+        return todayReviewCount + unmasteredToday + meetingPhraseReviewCount + unmasteredPhrases
     }
 
     /// Apply `pendingLearningTaskCount` to the Dock tile. Empty string removes
@@ -517,6 +581,172 @@ final class AppModel: ObservableObject {
         wordCarouselStore.unmarkMastered(word: word)
         refreshWordCarouselIfNeeded()
         statusMessage = "已取消熟悉：\(word)，会重新进入后续学习"
+    }
+
+    // MARK: - 会议口语句块动作
+
+    func refreshMeetingPhrasesIfNeeded() {
+        let snapshot = meetingPhraseStore.snapshot()
+        meetingPhraseTodayCount = snapshot.todayWords.count
+        meetingPhraseTodayMasteredCount = snapshot.todayMasteredCount
+        meetingPhraseTotalMasteredCount = snapshot.totalMasteredCount
+        meetingPhraseReviewCount = snapshot.reviewDueWords.count
+
+        // Review-due chunks ride at the front, then today's fresh chunks.
+        var seen: Set<String> = []
+        var combined: [(id: String, isReview: Bool)] = []
+        for id in snapshot.reviewDueWords where seen.insert(id).inserted {
+            combined.append((id, true))
+        }
+        for id in snapshot.todayWords where seen.insert(id).inserted {
+            combined.append((id, false))
+        }
+
+        let previousID = currentMeetingPhraseCard?.id
+        // `compactMap` drops any persisted id no longer in the bank (e.g. after
+        // the curated list changes), so stale state never crashes the deck.
+        meetingPhraseCards = combined.compactMap { entry in
+            guard var card = MeetingPhraseBank.card(forID: entry.id) else { return nil }
+            card.isReview = entry.isReview
+            card.isMastered = snapshot.masteredWords.contains(entry.id)
+            return card
+        }
+
+        if let previousID,
+           let index = meetingPhraseCards.firstIndex(where: { $0.id == previousID }) {
+            currentMeetingPhraseIndex = index
+        } else if meetingPhraseCards.isEmpty {
+            currentMeetingPhraseIndex = 0
+        } else {
+            currentMeetingPhraseIndex = min(currentMeetingPhraseIndex, meetingPhraseCards.count - 1)
+        }
+
+        refreshDockBadge()
+    }
+
+    func showNextMeetingPhrase() {
+        guard !meetingPhraseCards.isEmpty else { return }
+        currentMeetingPhraseIndex = (currentMeetingPhraseIndex + 1) % meetingPhraseCards.count
+    }
+
+    func showPreviousMeetingPhrase() {
+        guard !meetingPhraseCards.isEmpty else { return }
+        currentMeetingPhraseIndex = (currentMeetingPhraseIndex - 1 + meetingPhraseCards.count) % meetingPhraseCards.count
+    }
+
+    func markCurrentMeetingPhraseMastered() {
+        guard let card = currentMeetingPhraseCard else { return }
+        guard !card.isReview, !card.isMastered else { return }
+
+        meetingPhraseStore.markMastered(word: card.id)
+        refreshMeetingPhrasesIfNeeded()
+        statusMessage = "已掌握句块：\(card.english)，明天会安排第一次复习"
+    }
+
+    func rememberCurrentMeetingPhrase() {
+        guard let card = currentMeetingPhraseCard else { return }
+        guard card.isReview else { return }
+
+        meetingPhraseStore.advanceReview(word: card.id)
+        refreshMeetingPhrasesIfNeeded()
+
+        if let days = meetingPhraseStore.daysUntilNextReview(for: card.id) {
+            statusMessage = days <= 0
+                ? "继续保持：\(card.english)，今天稍后再复习一次"
+                : "继续保持：\(card.english)，下次复习在 \(days) 天后"
+        } else {
+            statusMessage = "继续保持：\(card.english)，已毕业，不再安排复习"
+        }
+    }
+
+    func forgotCurrentMeetingPhrase() {
+        guard let card = currentMeetingPhraseCard else { return }
+        guard card.isReview else { return }
+
+        meetingPhraseStore.resetReview(word: card.id)
+        refreshMeetingPhrasesIfNeeded()
+        statusMessage = "重置进度：\(card.english)，明天再复习一次"
+    }
+
+    // MARK: - 中译英产出 + AI 批改
+
+    private func loadProductionDrillState() {
+        let bank = ProductionDrillBank.all
+        guard !bank.isEmpty else {
+            currentDrill = nil
+            return
+        }
+        let storedIndex = defaults.integer(forKey: Self.drillIndexKey)
+        drillIndex = ((storedIndex % bank.count) + bank.count) % bank.count
+        currentDrill = bank[drillIndex]
+
+        if let data = defaults.data(forKey: Self.drillDatesKey),
+           let dates = try? JSONDecoder().decode([Date].self, from: data) {
+            productionDrillDates = dates
+        }
+        recomputeDrillsGradedToday()
+    }
+
+    private func recomputeDrillsGradedToday() {
+        drillsGradedToday = productionDrillDates.filter { calendar.isDateInToday($0) }.count
+    }
+
+    /// Move to the next drill, clearing the current attempt + grade.
+    func nextDrill() {
+        let bank = ProductionDrillBank.all
+        guard !bank.isEmpty else { return }
+        drillIndex = (drillIndex + 1) % bank.count
+        currentDrill = bank[drillIndex]
+        drillInput = ""
+        drillGrade = nil
+        drillGradeError = nil
+        defaults.set(drillIndex, forKey: Self.drillIndexKey)
+    }
+
+    /// Send the current attempt to the configured Claude engine for grading.
+    func gradeCurrentDrill() async {
+        guard let drill = currentDrill else { return }
+        let attempt = drillInput.trimmed
+        guard !attempt.isEmpty else {
+            drillGradeError = "先写下你的英文作答再提交批改"
+            return
+        }
+
+        isGradingDrill = true
+        drillGrade = nil
+        drillGradeError = nil
+        defer { isGradingDrill = false }
+
+        do {
+            let grade = try await translationService.gradeProduction(
+                chinese: drill.chinese,
+                reference: drill.reference,
+                attempt: attempt
+            )
+            drillGrade = grade
+            recordDrillAttempt()
+            statusMessage = "已批改：\(drill.chinese)"
+        } catch {
+            drillGradeError = (error as? LocalizedError)?.errorDescription
+                ?? "批改失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func recordDrillAttempt() {
+        productionDrillDates.append(Date())
+        if productionDrillDates.count > 2000 {
+            productionDrillDates.removeFirst(productionDrillDates.count - 2000)
+        }
+        if let data = try? JSONEncoder().encode(productionDrillDates) {
+            defaults.set(data, forKey: Self.drillDatesKey)
+        }
+        recomputeDrillsGradedToday()
+        refreshDockBadge()
+    }
+
+    /// Whether grading is possible right now (an AI engine is configured).
+    var canGradeProduction: Bool {
+        translationEngine != .freeOnly
     }
 
     /// Whether a looked-up result can be added to the word-learning deck. Only
@@ -880,6 +1110,8 @@ final class AppModel: ObservableObject {
             hasCompletedLearningToday = false
         }
         refreshWordCarouselIfNeeded()
+        refreshMeetingPhrasesIfNeeded()
+        recomputeDrillsGradedToday()
     }
 
     /// Apply a change coming from the reminder settings UI.

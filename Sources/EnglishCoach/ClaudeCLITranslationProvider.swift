@@ -74,6 +74,38 @@ struct ClaudeCLITranslationProvider {
         )
     }
 
+    /// Grade a Chinese→English production attempt. Reuses the same hardened
+    /// login-shell runner as `translate`, only swapping the system prompt and
+    /// JSON contract.
+    func grade(chinese: String, reference: String, attempt: String) async throws -> ProductionGrade {
+        let systemPrompt = ProductionGradeShared.systemPrompt + ProductionGradeShared.jsonInstruction
+
+        let promptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ec-gradeprompt-\(UUID().uuidString).txt")
+        try systemPrompt.write(to: promptURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: promptURL) }
+
+        let command = "perl -e 'alarm \(Self.timeoutSeconds); exec @ARGV' "
+            + "claude -p --output-format json --model \(model)"
+            + " --append-system-prompt-file '\(promptURL.path)'"
+
+        let stdin = ProductionGradeShared.userContent(
+            chinese: chinese,
+            reference: reference,
+            attempt: attempt
+        )
+        let stdout = try await Self.runLoginShell(command: command, stdin: stdin)
+
+        guard let data = stdout.data(using: .utf8),
+              let envelope = try? JSONDecoder().decode(Envelope.self, from: data),
+              let resultText = envelope.result?.trimmed,
+              !resultText.isEmpty else {
+            throw ClaudeCLIError.emptyResponse
+        }
+
+        return try ProductionGradeShared.grade(fromJSONText: resultText, provider: providerLabel)
+    }
+
     private struct Envelope: Decodable {
         let result: String?
     }

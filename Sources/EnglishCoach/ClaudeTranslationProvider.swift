@@ -217,4 +217,51 @@ struct ClaudeTranslationProvider {
             provider: providerLabel
         )
     }
+
+    /// Grade a Chinese→English production attempt via the API, mirroring
+    /// `translate` but with the grading prompt + schema.
+    func grade(chinese: String, reference: String, attempt: String) async throws -> ProductionGrade {
+        guard !apiKey.isEmpty else { throw ClaudeTranslationError.missingAPIKey }
+
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 1024,
+            "system": ProductionGradeShared.systemPrompt,
+            "output_config": [
+                "format": [
+                    "type": "json_schema",
+                    "schema": ProductionGradeShared.jsonSchema
+                ]
+            ],
+            "messages": [
+                ["role": "user", "content": ProductionGradeShared.userContent(
+                    chinese: chinese, reference: reference, attempt: attempt
+                )]
+            ]
+        ]
+
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            let message = (try? JSONDecoder().decode(APIErrorResponse.self, from: data))?.error.message ?? ""
+            throw ClaudeTranslationError.httpError(httpResponse.statusCode, message)
+        }
+
+        let decoded = try JSONDecoder().decode(MessagesResponse.self, from: data)
+        guard let jsonText = decoded.content.first(where: { $0.type == "text" })?.text else {
+            throw ClaudeTranslationError.emptyResponse
+        }
+
+        return try ProductionGradeShared.grade(fromJSONText: jsonText, provider: providerLabel)
+    }
 }

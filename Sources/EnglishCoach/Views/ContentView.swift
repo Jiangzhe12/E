@@ -5,6 +5,7 @@ private enum DetailTab: String, CaseIterable, Identifiable {
     case translate
     case stats
     case words
+    case route
     case interest
 
     var id: String { rawValue }
@@ -14,6 +15,7 @@ private enum DetailTab: String, CaseIterable, Identifiable {
         case .translate: return "翻译"
         case .stats: return "统计"
         case .words: return "单词"
+        case .route: return "路线"
         case .interest: return "兴趣"
         }
     }
@@ -23,6 +25,7 @@ private enum DetailTab: String, CaseIterable, Identifiable {
         case .translate: return "character.book.closed"
         case .stats: return "chart.bar.xaxis"
         case .words: return "text.book.closed"
+        case .route: return "map"
         case .interest: return "lightbulb"
         }
     }
@@ -37,6 +40,7 @@ struct ContentView: View {
     @State private var isShowingMasteredWordsSheet: Bool = false
     @State private var masteredWordSearchText: String = ""
     @State private var dailyWordRevealState = DailyWordTranslationRevealState()
+    @State private var meetingPhraseRevealState = DailyWordTranslationRevealState()
     @State private var didPerformInitialActivation: Bool = false
     @State private var pendingHistoryDeletion: [Int64] = []
     @State private var isShowingHistoryDeleteConfirm: Bool = false
@@ -212,6 +216,10 @@ struct ContentView: View {
                         activityHeatmapCard
                     case .words:
                         wordLearningCard
+                    case .route:
+                        learningRouteCard
+                        meetingPhraseCard
+                        productionDrillCard
                     case .interest:
                         interestLearningCard
                     }
@@ -612,6 +620,553 @@ struct ContentView: View {
                         .stroke(Color.white.opacity(0.82), lineWidth: 1)
                 )
         )
+    }
+
+    // MARK: - 学习路线（关卡进阶）
+
+    /// Roadmap overview: frames the chunk drill below as stage 1 of a path that
+    /// builds toward real conversation, so memorising chunks feels like progress
+    /// rather than another word list.
+    private var learningRouteCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("学习路线", systemImage: "map")
+                    .font(.headline)
+                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                Spacer()
+                Text("目标：开会能跟上、能开口")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("背单词解决「看得懂」，但交流靠「说得出」。这条路线按能力进阶，先把开会要用的句子练到脱口而出。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 8) {
+                routeStageRow(
+                    stage: 1,
+                    title: "会议句块速记",
+                    detail: "把高频口语句块用 SRS 记牢（下方）",
+                    isActive: true,
+                    isDone: false
+                )
+                routeStageRow(
+                    stage: 2,
+                    title: "句块跟读",
+                    detail: "跟着发音影子跟读，练听力与语感",
+                    isActive: false,
+                    isDone: false
+                )
+                routeStageRow(
+                    stage: 3,
+                    title: "中译英产出",
+                    detail: "看中文说英文，AI 批改更地道说法（下方）",
+                    isActive: true,
+                    isDone: false
+                )
+                routeStageRow(
+                    stage: 4,
+                    title: "会议角色扮演",
+                    detail: "AI 扮演同事，完成一段来回对话",
+                    isActive: false,
+                    isDone: false
+                )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.74))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
+                )
+        )
+    }
+
+    private func routeStageRow(stage: Int, title: String, detail: String, isActive: Bool, isDone: Bool) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(isActive
+                          ? Color(red: 0.22, green: 0.44, blue: 0.64)
+                          : Color.white.opacity(0.9))
+                    .frame(width: 26, height: 26)
+                if isDone {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Text("\(stage)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(isActive ? .white : .secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("关卡 \(stage) · \(title)")
+                    .font(.callout.weight(isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            if isActive {
+                Text("可练习")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color(red: 0.87, green: 0.94, blue: 0.99))
+                    )
+            } else {
+                Text("待解锁")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isActive ? Color.white.opacity(0.85) : Color.white.opacity(0.5))
+        )
+    }
+
+    /// Stage 1 of the route: a production-first flashcard. The front shows only
+    /// the Chinese situation, so the user tries to *produce* the English chunk
+    /// out loud before revealing it — training recall, not recognition.
+    private var meetingPhraseCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("关卡 1 · 会议口语句块", systemImage: "questionmark.bubble")
+                    .font(.headline)
+                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                Spacer()
+                Text(model.meetingPhraseProgressText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("已掌握 \(model.meetingPhraseTotalMasteredCount)/\(model.meetingPhraseBankTotal) 句 · 先看中文场景，想好英文怎么说，再揭晓对照")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let card = model.currentMeetingPhraseCard {
+                let isRevealed = meetingPhraseRevealState.isRevealed(for: card.id)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Label(card.category.title, systemImage: card.category.systemImage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color(red: 0.90, green: 0.95, blue: 1.0))
+                            )
+
+                        if card.isReview {
+                            Label("复习", systemImage: "arrow.triangle.2.circlepath")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color(red: 0.84, green: 0.45, blue: 0.18))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(Color(red: 1.0, green: 0.93, blue: 0.85))
+                                )
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("场景")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                        Text(card.scenario)
+                            .font(.title3.weight(.medium))
+                            .foregroundStyle(Color(red: 0.10, green: 0.21, blue: 0.36))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if isRevealed {
+                        Divider().opacity(0.4)
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(card.english)
+                                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color(red: 0.12, green: 0.30, blue: 0.22))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button {
+                                model.speak(card.english)
+                            } label: {
+                                Image(systemName: "speaker.wave.2.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                            }
+                            .buttonStyle(.borderless)
+                            .keyboardShortcut("p", modifiers: .command)
+                            .help("朗读句块（⌘P）")
+                        }
+                        Text(card.chinese)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text("例句：\(card.example)")
+                            .font(.caption)
+                            .foregroundStyle(Color(red: 0.27, green: 0.40, blue: 0.55))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    } else {
+                        Text("先在心里把这句英文说出来 —— 按空格揭晓答案")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.80))
+                )
+
+                HStack(spacing: 10) {
+                    Button {
+                        meetingPhraseRevealState.toggle(for: card.id)
+                    } label: {
+                        Label(
+                            isRevealed ? "再次隐藏" : "揭晓答案",
+                            systemImage: isRevealed ? "eye.slash" : "eye"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.space, modifiers: [])
+                    .help(isRevealed ? "再次隐藏（空格）" : "揭晓英文（空格）")
+
+                    if card.isReview {
+                        Button {
+                            model.rememberCurrentMeetingPhrase()
+                        } label: {
+                            Label("还记得", systemImage: "checkmark.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color(red: 0.30, green: 0.70, blue: 0.40))
+                        .keyboardShortcut("r", modifiers: [])
+                        .help("还记得（R）")
+
+                        Button {
+                            model.forgotCurrentMeetingPhrase()
+                        } label: {
+                            Label("忘了", systemImage: "arrow.counterclockwise.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Color(red: 0.84, green: 0.45, blue: 0.18))
+                        .keyboardShortcut("f", modifiers: [])
+                        .help("忘了（F）")
+                    } else {
+                        Button {
+                            model.markCurrentMeetingPhraseMastered()
+                        } label: {
+                            Label(card.isMastered ? "已掌握" : "标记掌握", systemImage: card.isMastered ? "checkmark.circle.fill" : "checkmark.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(card.isMastered)
+                        .keyboardShortcut("d", modifiers: .command)
+                        .help("标记为已掌握（⌘D），明天起进入复习计划")
+                    }
+
+                    Button {
+                        model.showPreviousMeetingPhrase()
+                    } label: {
+                        Label("上一个", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .help("上一个句块（←）")
+
+                    Button {
+                        model.showNextMeetingPhrase()
+                    } label: {
+                        Label("下一个", systemImage: "chevron.right")
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.rightArrow, modifiers: [])
+                    .help("下一个句块（→）")
+
+                    Spacer(minLength: 0)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("今天的会议句块已经全部掌握 👍")
+                        .font(.callout.weight(.semibold))
+                    Text("明天会安排复习，或解锁新的一批句块。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.80))
+                )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.74))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
+                )
+        )
+    }
+
+    /// Stage 3 of the route: Chinese→English production with AI grading. This
+    /// trains output (the weak muscle) — the user writes English from a Chinese
+    /// prompt and a Claude engine grades it with a polished version + notes.
+    private var productionDrillCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("关卡 3 · 中译英产出", systemImage: "pencil.and.scribble")
+                    .font(.headline)
+                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                Spacer()
+                Text("今日已练 \(model.drillsGradedToday) 句")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("看中文，自己写出英文，再让 AI 教练批改——练的是「能不能调出来、说得地道」。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !model.canGradeProduction {
+                Label("此关卡需要 AI 引擎。请在设置（⌘,）中选择「本地 Claude CLI」或填入 Claude API Key。", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color(red: 0.78, green: 0.44, blue: 0.12))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color(red: 1.0, green: 0.95, blue: 0.86))
+                    )
+            }
+
+            if let drill = model.currentDrill {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Label(drill.category.title, systemImage: drill.category.systemImage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color(red: 0.90, green: 0.95, blue: 1.0))
+                            )
+                        Spacer(minLength: 0)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("把这句话用英文说出来")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                        Text(drill.chinese)
+                            .font(.title3.weight(.medium))
+                            .foregroundStyle(Color(red: 0.10, green: 0.21, blue: 0.36))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let hint = drill.hint {
+                            Text("提示：\(hint)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    TextEditor(text: $model.drillInput)
+                        .font(.callout)
+                        .frame(height: 70)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color(nsColor: .textBackgroundColor))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                        )
+                        .disabled(model.isGradingDrill)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.80))
+                )
+
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await model.gradeCurrentDrill() }
+                    } label: {
+                        if model.isGradingDrill {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("批改中…")
+                            }
+                        } else {
+                            Label("提交批改", systemImage: "checkmark.bubble")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(red: 0.30, green: 0.62, blue: 0.46))
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(model.isGradingDrill
+                              || model.drillInput.trimmed.isEmpty
+                              || !model.canGradeProduction)
+                    .help("提交批改（⌘⏎）")
+
+                    Button {
+                        model.nextDrill()
+                    } label: {
+                        Label("换一句", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isGradingDrill)
+                    .help("跳到下一句")
+
+                    Spacer(minLength: 0)
+                }
+
+                if let error = model.drillGradeError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Color(red: 0.77, green: 0.33, blue: 0.21))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let grade = model.drillGrade {
+                    gradeResultView(grade: grade, reference: drill.reference)
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.74))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
+                )
+        )
+    }
+
+    @ViewBuilder
+    private func gradeResultView(grade: ProductionGrade, reference: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(verdictTitle(grade.verdict))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous).fill(verdictColor(grade.verdict))
+                    )
+                Text("AI 批改")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                Text(grade.provider)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("更地道的说法")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(grade.polished)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Color(red: 0.12, green: 0.30, blue: 0.22))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    Button {
+                        model.speak(grade.polished)
+                    } label: {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("朗读")
+                }
+            }
+
+            if !grade.notes.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(grade.notes.enumerated()), id: \.offset) { _, note in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("•").foregroundStyle(.secondary)
+                            Text(note)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+
+            if let encouragement = grade.encouragement {
+                Text(encouragement)
+                    .font(.caption)
+                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+            }
+
+            Divider().opacity(0.4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("参考答案")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                Text(reference)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(red: 0.96, green: 0.99, blue: 0.97))
+        )
+    }
+
+    private func verdictTitle(_ verdict: ProductionVerdict) -> String {
+        switch verdict {
+        case .great: return "很地道"
+        case .good: return "基本可用"
+        case .needsWork: return "可以更好"
+        }
+    }
+
+    private func verdictColor(_ verdict: ProductionVerdict) -> Color {
+        switch verdict {
+        case .great: return Color(red: 0.24, green: 0.62, blue: 0.36)
+        case .good: return Color(red: 0.28, green: 0.52, blue: 0.74)
+        case .needsWork: return Color(red: 0.84, green: 0.52, blue: 0.18)
+        }
     }
 
     private static func timeUntilNextDailyBatchDescription() -> String {

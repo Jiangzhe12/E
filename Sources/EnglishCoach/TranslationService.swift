@@ -103,6 +103,19 @@ actor TranslationService {
         return nil
     }
 
+    /// Grade a Chinese→English production attempt with whichever Claude engine
+    /// is configured. Throws `ProductionGradeError.noProvider` when the user is
+    /// on the free-only engine (no AI to grade with).
+    func gradeProduction(chinese: String, reference: String, attempt: String) async throws -> ProductionGrade {
+        if let claudeAPI {
+            return try await claudeAPI.grade(chinese: chinese, reference: reference, attempt: attempt)
+        }
+        if let claudeCLI {
+            return try await claudeCLI.grade(chinese: chinese, reference: reference, attempt: attempt)
+        }
+        throw ProductionGradeError.noProvider
+    }
+
     func translate(_ text: String, direction override: TranslationDirection? = nil) async throws -> TranslationOutcome {
         let trimmed = text.trimmed
         guard !trimmed.isEmpty else {
