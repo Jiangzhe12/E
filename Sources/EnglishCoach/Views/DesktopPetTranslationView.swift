@@ -7,6 +7,7 @@ enum DesktopPetBubble {
     case translation(result: TranslationResult, sourceAppName: String?)
     case dailyWordInvite(DesktopWordCard)
     case dailyWordMeaning(DesktopWordCard)
+    case dailyWordCompletion(message: String)
     case feedback(title: String, message: String)
 }
 
@@ -46,6 +47,8 @@ final class DesktopPetPresentationState: ObservableObject {
             return .result
         case .dailyWordInvite, .dailyWordMeaning:
             return .learning
+        case .dailyWordCompletion:
+            return .success
         case .feedback:
             return .success
         }
@@ -75,6 +78,11 @@ final class DesktopPetPresentationState: ObservableObject {
         bubbleID = UUID()
     }
 
+    func showDailyWordCompletion(message: String) {
+        bubble = .dailyWordCompletion(message: message)
+        bubbleID = UUID()
+    }
+
     func showFeedback(title: String, message: String) {
         bubble = .feedback(title: title, message: message)
         bubbleID = UUID()
@@ -98,6 +106,7 @@ struct DesktopPetTranslationView: View {
     let onShowDailyWordMeaning: (DesktopWordCard) -> Void
     let onDailyWordComplete: (DesktopWordCard) -> Void
     let onDailyWordPractice: (DesktopWordCard) -> Void
+    let onStartNextDailyWordGroup: () -> Void
     let onSpeakDailyWord: (DesktopWordCard) -> Void
 
     @State private var isFloating = false
@@ -206,6 +215,15 @@ struct DesktopPetTranslationView: View {
                 onComplete: { onDailyWordComplete(card) },
                 onPractice: { onDailyWordPractice(card) },
                 onSpeak: { onSpeakDailyWord(card) },
+                onCloseBubble: onCloseBubble
+            )
+            .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+        case let .dailyWordCompletion(message):
+            DesktopPetDailyWordCompletionBubbleView(
+                message: message,
+                tailOffset: bubbleTailOffset,
+                tailPosition: bubbleTailPosition,
+                onStartNextGroup: onStartNextDailyWordGroup,
                 onCloseBubble: onCloseBubble
             )
             .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
@@ -519,6 +537,7 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
                 DesktopPetBubbleHeader(
                     icon: "tag.fill",
                     title: card.isReview ? "复习词" : "今日词",
+                    trailingBadge: card.progressBadgeText,
                     onCloseBubble: onLater
                 )
 
@@ -587,6 +606,7 @@ private struct DesktopPetDailyWordMeaningBubbleView: View {
                 DesktopPetBubbleHeader(
                     icon: "character.book.closed.fill",
                     title: card.word,
+                    trailingBadge: card.progressBadgeText,
                     onCloseBubble: onCloseBubble
                 )
 
@@ -632,6 +652,49 @@ private struct DesktopPetDailyWordMeaningBubbleView: View {
                         .bubbleClickableHover()
 
                     Button("再练", action: onPractice)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
+                        .bubbleClickableHover()
+                }
+            }
+        }
+    }
+}
+
+private struct DesktopPetDailyWordCompletionBubbleView: View {
+    let message: String
+    let tailOffset: CGFloat
+    let tailPosition: DesktopPetBubbleTailPosition
+    let onStartNextGroup: () -> Void
+    let onCloseBubble: () -> Void
+
+    var body: some View {
+        DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
+            VStack(alignment: .leading, spacing: 10) {
+                DesktopPetBubbleHeader(
+                    icon: "checkmark.seal.fill",
+                    title: "今日已完成",
+                    onCloseBubble: onCloseBubble
+                )
+
+                Text(message)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                    .lineLimit(3)
+
+                HStack(spacing: 8) {
+                    Button {
+                        onStartNextGroup()
+                    } label: {
+                        Label("学习下一组", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
+                    .bubbleClickableHover()
+
+                    Button("明天继续", action: onCloseBubble)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
@@ -698,6 +761,7 @@ private extension View {
 private struct DesktopPetBubbleHeader: View {
     let icon: String
     let title: String
+    var trailingBadge: String? = nil
     let onCloseBubble: () -> Void
 
     var body: some View {
@@ -711,6 +775,18 @@ private struct DesktopPetBubbleHeader: View {
                 .lineLimit(1)
 
             Spacer(minLength: 8)
+
+            if let trailingBadge, !trailingBadge.isEmpty {
+                Text(trailingBadge)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color(red: 0.78, green: 0.90, blue: 1.0))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color(red: 0.08, green: 0.15, blue: 0.40).opacity(0.92))
+                    )
+            }
 
             Button(action: onCloseBubble) {
                 Image(systemName: "xmark")

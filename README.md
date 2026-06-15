@@ -4,13 +4,15 @@
 
 - 默认触发方式：连续复制两次 `⌘C, ⌘C`
 - 跨应用读取选中文本（授权辅助功能后）/ 无权限时自动回退剪贴板
-- 翻译结果展示（本地词典 + 在线回退）
+- 翻译结果展示：ECDICT 本地词典优先，句子/词典未命中内容可走 Claude CLI（安全隔离）、Claude API 或 MyMemory 回退
+- 单次翻译输入上限：2000 字符
 - 查词历史本地持久化（SQLite）
 - 手动输入支持回车直接翻译
 - 历史记录支持删除（右键或鼠标悬停显示删除图标）
 - 兴趣内容学习流：按主题（电影/科技/旅行/游戏/音乐）生成短篇阅读与选择题，显示今日完成数 / 连胜天数
-- 软件内单词学习功能：每天 20 个单词（词义/例句），翻译可反复显示/再次隐藏，支持 ← → Space ⌘D 键盘操作；“标记熟悉”后从后续学习中剔除
+- 软件内单词学习功能：默认每天 20 个单词（词义/例句），完成后显示“今日已完成”；可点“学习下一组”继续扩展到 40/60/...，进度同步显示在主窗口和桌宠气泡
 - 统计总览增强：新增今日单词数、今日熟悉数、累计熟悉数
+- 熟悉单词列表增强：支持“今日/全部”筛选，按日期分组，展示音标、翻译、英文释义、熟悉时间和下次复习状态
 - 划词翻译可一键「加入生词本」：单个英文单词点按钮即进入每日学习与 SRS 复习队列（已缓存释义，单词卡即时显示，无需再次联网）
 - 划词时自动记录原句上下文：授权辅助功能后，翻译会读取所选单词所在的句子，展示在翻译结果卡与查词历史中，复习时能结合真实语境
 - 学习路线板块（面向「开会能跟上、能开口」）：以能力进阶分关卡（句块速记 → 跟读 → 中译英产出 → 角色扮演）。
@@ -23,7 +25,7 @@
 
 ```bash
 ./scripts/build_app.sh
-open ./dist/EnglishCoach.app
+open /Applications/EnglishCoach.app
 ```
 
 说明：
@@ -34,13 +36,8 @@ open ./dist/EnglishCoach.app
   `Resources/AppIcon-completed-glow-1024.png`
 - 会自动打包 `AppIconPending.icns` / `AppIconCompleted.icns` / `AppIconCompletedGlow.icns`
 - App 运行时会根据“今天兴趣学习是否完成”自动切换 Dock 图标，并在完成时播放一次短脉冲动画
-- 构建后可直接双击启动：`dist/EnglishCoach.app`
-- 如果希望放到应用程序目录：
-
-```bash
-cp -R ./dist/EnglishCoach.app /Applications/
-open /Applications/EnglishCoach.app
-```
+- 构建产物会生成到 `dist/EnglishCoach.app`
+- 脚本会自动替换 `/Applications/EnglishCoach.app`，推荐直接从 `/Applications` 启动最新版
 
 ### 自定义 App 图标
 
@@ -72,12 +69,28 @@ swift build --disable-sandbox
 ./.build/arm64-apple-macosx/debug/EnglishCoach
 ```
 
+## 翻译引擎与隐私
+
+翻译链路按优先级执行：
+
+1. 英文单词/短语优先查本地 `ECDICT`，不联网，速度最快。
+2. 句子或本地词典未命中内容根据设置选择：
+   - `本地 Claude CLI（安全隔离）`：使用本机已登录的 Claude Code，无需 API Key；调用时禁用 Claude Code 工具、禁用会话持久化、忽略 MCP 配置，并在 `/tmp/EnglishCoachClaudeCLI` 临时空目录运行，避免访问项目文件。
+   - `Claude API Key`：使用 Anthropic API，速度和稳定性通常优于 CLI，但需要配置 API Key。
+   - `仅免费（MyMemory）`：不调用 Claude，质量一般，作为免费兜底。
+3. Claude 调用失败时会回退到 MyMemory，并在结果里提示来源。
+
+本地 Claude CLI 仍会比普通 HTTP API 慢，因为每次翻译都要启动一次 CLI 进程。
+
 ## 软件内单词学习使用
 
 - 在主窗口中使用 `每日单词学习` 卡片
-- 单词按顺序展示，可手动切换上一个/下一个
-- 点击 `标记熟悉` 后会自动切换到下一个单词，并把该词从后续学习中移除
-- 主界面统计中的 `累计熟悉` 可点击查看全部熟悉单词，并支持取消熟悉
+- 默认每日目标为 20 个新词，进度显示为 `1/20`、`2/20` ...
+- 达到目标后显示 `今日已完成`，不再继续展示新词卡
+- 点击 `学习下一组` 后，当天目标扩展到 `40`，进度从 `21/40` 继续；之后可继续扩展到 `60`、`80` ...
+- 单词按顺序展示，可手动切换上一个/下一个；翻译可显示/再次隐藏
+- 点击 `标记熟悉` 后会自动切换到下一个单词，并把该词加入间隔复习
+- 主界面统计中的 `今日熟悉` / `累计熟悉` 可点击查看熟悉单词；列表支持今日/全部、日期分组、释义展示和取消熟悉
 
 ## 首次权限
 
@@ -91,4 +104,15 @@ SQLite 文件：
 
 ```text
 ~/Library/Application Support/EnglishCoach/english_coach.sqlite3
+```
+
+## 开发验证
+
+常用验证命令：
+
+```bash
+swift build --disable-sandbox
+swiftc Sources/EnglishCoach/Models.swift Sources/EnglishCoach/MeetingPhraseBank.swift Sources/EnglishCoach/ProductionDrill.swift Sources/EnglishCoach/ClaudeTranslationProvider.swift Sources/EnglishCoach/ClaudeCLITranslationProvider.swift Tests/ClaudeCLISafetyTests/main.swift -o /tmp/ClaudeCLISafetyTests && /tmp/ClaudeCLISafetyTests
+swiftc Sources/EnglishCoach/WordCarouselStore.swift Tests/WordCarouselStoreTests/main.swift -o /tmp/WordCarouselStoreTests && /tmp/WordCarouselStoreTests
+swiftc Sources/EnglishCoach/DailyWordProgress.swift Tests/DailyWordProgressTests/main.swift -o /tmp/DailyWordProgressTests && /tmp/DailyWordProgressTests
 ```

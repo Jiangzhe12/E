@@ -38,6 +38,7 @@ struct ContentView: View {
     @State private var selectedHistoryID: Int64?
     @State private var hoveredHistoryID: Int64?
     @State private var isShowingMasteredWordsSheet: Bool = false
+    @State private var masteredWordsScope: MasteredWordListScope = .all
     @State private var masteredWordSearchText: String = ""
     @State private var dailyWordRevealState = DailyWordTranslationRevealState()
     @State private var meetingPhraseRevealState = DailyWordTranslationRevealState()
@@ -131,6 +132,13 @@ struct ContentView: View {
             self.selectedHistoryID = nil
         }
         model.deleteHistory(ids: ids)
+    }
+
+    private func openMasteredWords(scope: MasteredWordListScope) {
+        masteredWordsScope = scope
+        masteredWordSearchText = ""
+        isShowingMasteredWordsSheet = true
+        model.loadMasteredWordDefinitionsIfNeeded()
     }
 
     private var sidebar: some View {
@@ -351,13 +359,18 @@ struct ContentView: View {
                     value: "\(model.todayWordDeckCount)",
                     systemImage: "rectangle.3.group.bubble"
                 )
-                statChip(
-                    title: "今日熟悉",
-                    value: "\(model.todayMasteredWordCount)",
-                    systemImage: "checkmark.circle"
-                )
                 Button {
-                    isShowingMasteredWordsSheet = true
+                    openMasteredWords(scope: .today)
+                } label: {
+                    statChip(
+                        title: "今日熟悉",
+                        value: "\(model.todayMasteredWordCount)",
+                        systemImage: "checkmark.circle"
+                    )
+                }
+                .buttonStyle(.plain)
+                Button {
+                    openMasteredWords(scope: .all)
                 } label: {
                     statChip(
                         title: "累计熟悉",
@@ -457,7 +470,42 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let card = model.currentDailyWordCard {
+            if model.hasCompletedDailyWordTarget {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("今日已完成", systemImage: "checkmark.seal.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Color(red: 0.24, green: 0.58, blue: 0.40))
+                    Text(DailyWordProgress.completionMessage(
+                        quota: model.todayDailyWordTarget,
+                        groupSize: model.dailyWordGroupSize
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Text(Self.timeUntilNextDailyBatchDescription())
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+
+                    HStack(spacing: 10) {
+                        Button {
+                            model.startNextDailyWordGroup()
+                        } label: {
+                            Label("学习下一组", systemImage: "plus.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("查看累计熟悉") {
+                            openMasteredWords(scope: .all)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.80))
+                )
+            } else if let card = model.currentDailyWordCard {
                 let isRevealed = dailyWordRevealState.isRevealed(for: card.id)
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -587,7 +635,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
 
                     Button("查看累计熟悉") {
-                        isShowingMasteredWordsSheet = true
+                        openMasteredWords(scope: .all)
                     }
                     .buttonStyle(.bordered)
                 }
@@ -1245,12 +1293,20 @@ struct ContentView: View {
     private var masteredWordsSheet: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 10) {
+                Picker("", selection: $masteredWordsScope) {
+                    ForEach(MasteredWordListScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
                 TextField("搜索已熟悉单词", text: $masteredWordSearchText)
                     .textFieldStyle(.roundedBorder)
 
-                if filteredMasteredWords.isEmpty {
+                if masteredWordSections.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(model.allMasteredWords.isEmpty ? "还没有已熟悉单词" : "没有匹配的单词")
+                        Text(masteredWordsEmptyTitle)
                             .font(.headline)
                         Text("在软件内“每日单词学习”里点击“标记熟悉”后会出现在这里。")
                             .font(.caption)
@@ -1259,24 +1315,23 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 } else {
                     List {
-                        ForEach(filteredMasteredWords, id: \.self) { word in
-                            HStack {
-                                Text(word)
-                                    .font(.body.monospaced())
-                                Spacer()
-                                Button("取消熟悉") {
-                                    model.unmarkMasteredWord(word)
+                        ForEach(masteredWordSections) { section in
+                            Section {
+                                ForEach(section.items) { item in
+                                    masteredWordRow(item)
                                 }
-                                .buttonStyle(.bordered)
+                            } header: {
+                                Text(section.title)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
                             }
-                            .padding(.vertical, 2)
                         }
                     }
                     .listStyle(.plain)
                 }
             }
             .padding(16)
-            .navigationTitle("累计熟悉单词")
+            .navigationTitle(masteredWordsSheetTitle)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") {
@@ -1287,12 +1342,92 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 520, minHeight: 420)
+        .onAppear {
+            model.loadMasteredWordDefinitionsIfNeeded()
+        }
     }
 
-    private var filteredMasteredWords: [String] {
-        let query = masteredWordSearchText.normalizedForLookup
-        guard !query.isEmpty else { return model.allMasteredWords }
-        return model.allMasteredWords.filter { $0.contains(query) }
+    private var masteredWordsSheetTitle: String {
+        switch masteredWordsScope {
+        case .today: return "今日熟悉单词"
+        case .all: return "累计熟悉单词"
+        }
+    }
+
+    private var filteredMasteredWordItems: [MasteredWordListItem] {
+        MasteredWordListPresentation.filteredItems(
+            model.masteredWordItems,
+            scope: masteredWordsScope,
+            searchText: masteredWordSearchText
+        )
+    }
+
+    private var masteredWordSections: [MasteredWordListSection] {
+        MasteredWordListPresentation.sections(for: filteredMasteredWordItems)
+    }
+
+    private var masteredWordsEmptyTitle: String {
+        MasteredWordListPresentation.emptyTitle(
+            scope: masteredWordsScope,
+            hasAnyItems: !model.masteredWordItems.isEmpty,
+            isSearching: !masteredWordSearchText.trimmed.isEmpty
+        )
+    }
+
+    private func masteredWordRow(_ item: MasteredWordListItem) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(item.word)
+                        .font(.body.monospaced().weight(.semibold))
+                    if let phonetic = item.phonetic, !phonetic.isEmpty {
+                        Text(phonetic)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Color(red: 0.45, green: 0.34, blue: 0.72))
+                    }
+                }
+
+                Text(masteredWordTranslationText(for: item))
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(item.translation == nil ? .secondary : .primary)
+                    .lineLimit(2)
+
+                if let definition = item.definition, !definition.isEmpty {
+                    Text(definition)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                HStack(spacing: 8) {
+                    Label(
+                        MasteredWordListPresentation.masteredTimeText(for: item.masteredAt),
+                        systemImage: "calendar"
+                    )
+                    Label(
+                        MasteredWordListPresentation.reviewText(for: item),
+                        systemImage: item.isGraduated ? "checkmark.seal" : "clock.arrow.circlepath"
+                    )
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+
+            Spacer(minLength: 12)
+
+            Button("取消熟悉") {
+                model.unmarkMasteredWord(item.word)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func masteredWordTranslationText(for item: MasteredWordListItem) -> String {
+        guard let translation = item.translation, !translation.isEmpty else {
+            return "暂无本地释义"
+        }
+        return translation
     }
 
     private var historyList: some View {

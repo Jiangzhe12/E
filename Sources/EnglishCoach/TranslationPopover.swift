@@ -27,6 +27,7 @@ final class TranslationPopoverController {
     var onRequestLastTranslation: (() -> Void)?
     var onDailyWordComplete: ((DesktopWordCard) -> Void)?
     var onDailyWordPractice: ((DesktopWordCard) -> Void)?
+    var onStartNextDailyWordGroup: (() -> Void)?
     var onAddToLearning: ((TranslationResult) -> Void)?
 
     private var quickTranslatePanel: NSPanel?
@@ -136,6 +137,14 @@ final class TranslationPopoverController {
         }
     }
 
+    func presentDailyWordCompletion(message: String) {
+        cancelAutoDismissTimer()
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: nil) {
+            desktopPetState.showDailyWordCompletion(message: message)
+        }
+    }
+
     func presentFeedback(
         title: String,
         message: String,
@@ -203,6 +212,9 @@ final class TranslationPopoverController {
                 },
                 onDailyWordPractice: { [weak self] card in
                     self?.onDailyWordPractice?(card)
+                },
+                onStartNextDailyWordGroup: { [weak self] in
+                    self?.onStartNextDailyWordGroup?()
                 },
                 onSpeakDailyWord: { [weak self] card in
                     self?.speechService.speak(card.word)

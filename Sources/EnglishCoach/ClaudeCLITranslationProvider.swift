@@ -31,14 +31,17 @@ enum ClaudeCLIError: LocalizedError {
 ///
 /// The CLI is run through a login shell (`/bin/zsh -lc`) so the user's full
 /// PATH / version-manager setup (volta, nvm, homebrew) resolves `claude` and
-/// the node runtime it needs. The text to translate is passed on stdin and the
-/// instructions via a temp `--append-system-prompt-file`, so no user content is
-/// ever interpolated into the shell command. A `perl alarm` wrapper enforces a
-/// hard timeout (macOS has no `timeout` binary).
+/// the node runtime it needs. The invocation disables Claude Code tools,
+/// plugins, session persistence, and MCP config, then runs from an isolated
+/// temporary directory so a translation request cannot inspect the app's source
+/// tree or the user's current project. The text to translate is passed on stdin
+/// and the instructions via a temp `--append-system-prompt-file`, so no user
+/// content is ever interpolated into the shell command. A `perl alarm` wrapper
+/// enforces a hard timeout (macOS has no `timeout` binary).
 struct ClaudeCLITranslationProvider {
     let model: String
 
-    var providerLabel: String { "本地 Claude CLI" }
+    var providerLabel: String { "本地 Claude CLI（安全隔离）" }
 
     private static let timeoutSeconds = 45
 
@@ -50,12 +53,7 @@ struct ClaudeCLITranslationProvider {
         try systemPrompt.write(to: promptURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: promptURL) }
 
-        // perl's alarm fires SIGALRM after N seconds; it survives exec, so the
-        // claude process is killed if it hangs.
-        let command = "perl -e 'alarm \(Self.timeoutSeconds); exec @ARGV' "
-            + "claude -p --output-format json --model \(model)"
-            + " --append-system-prompt-file '\(promptURL.path)'"
-
+        let command = Self.makeCommand(model: model, promptURL: promptURL)
         let stdout = try await Self.runLoginShell(command: command, stdin: text)
 
         // The CLI wraps the model output in an envelope; `.result` is the text.
@@ -85,10 +83,7 @@ struct ClaudeCLITranslationProvider {
         try systemPrompt.write(to: promptURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: promptURL) }
 
-        let command = "perl -e 'alarm \(Self.timeoutSeconds); exec @ARGV' "
-            + "claude -p --output-format json --model \(model)"
-            + " --append-system-prompt-file '\(promptURL.path)'"
-
+        let command = Self.makeCommand(model: model, promptURL: promptURL)
         let stdin = ProductionGradeShared.userContent(
             chinese: chinese,
             reference: reference,
@@ -118,11 +113,42 @@ struct ClaudeCLITranslationProvider {
     translatedText (字符串)、phonetic (字符串或 null)、explanations (字符串数组)、example (字符串或 null)。
     """
 
+    static func makeCommand(model: String, promptURL: URL) -> String {
+        // perl's alarm fires SIGALRM after N seconds; it survives exec, so the
+        // claude process is killed if it hangs.
+        "perl -e 'alarm \(Self.timeoutSeconds); exec @ARGV' "
+            + "claude -p --output-format json"
+            + " --safe-mode"
+            + " --no-session-persistence"
+            + " --permission-mode dontAsk"
+            + " --tools ''"
+            + " --strict-mcp-config"
+            + " --mcp-config '{}'"
+            + " --model \(shellSingleQuote(model))"
+            + " --append-system-prompt-file \(shellSingleQuote(promptURL.path))"
+    }
+
+    static func isolatedWorkingDirectory() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("EnglishCoachClaudeCLI", isDirectory: true)
+    }
+
+    private static func shellSingleQuote(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
     private static func runLoginShell(command: String, stdin: String) async throws -> String {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+        let workingDirectory = isolatedWorkingDirectory()
+        try FileManager.default.createDirectory(
+            at: workingDirectory,
+            withIntermediateDirectories: true
+        )
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-lc", command]
+            process.currentDirectoryURL = workingDirectory
 
             let outPipe = Pipe()
             let errPipe = Pipe()

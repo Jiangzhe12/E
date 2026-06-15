@@ -3,6 +3,8 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
+    private static let dailyWordQuota = 20
+
     @Published var statusMessage: String = "在任意应用中连续按两次复制（⌘C, ⌘C）即可翻译"
     @Published var latestResult: TranslationResult?
     /// Sentence the latest lookup came from, when captured from the source app.
@@ -29,8 +31,10 @@ final class AppModel: ObservableObject {
     @Published var currentDailyWordIndex: Int = 0
     @Published var todayWordDeckCount: Int = 0
     @Published var todayMasteredWordCount: Int = 0
+    @Published var todayDailyWordTarget: Int = AppModel.dailyWordQuota
     @Published var totalMasteredWordCount: Int = 0
     @Published var allMasteredWords: [String] = []
+    @Published var masteredWordItems: [MasteredWordListItem] = []
     @Published var todayReviewCount: Int = 0
 
     // MARK: - 会议口语句块（学习路线 · 关卡1）
@@ -92,6 +96,7 @@ final class AppModel: ObservableObject {
     private let historyStore: HistoryStore?
     private let defaults: UserDefaults
     private let wordCarouselStore: WordCarouselStore
+    private let masteredWordDictionary = ECDICTDictionary()
     /// Reuses the same SRS engine as the word deck, keyed independently, to
     /// schedule meeting-phrase chunks.
     private let meetingPhraseStore: WordCarouselStore
@@ -167,7 +172,7 @@ final class AppModel: ObservableObject {
             defaults: defaults,
             coreWords: CommonWordBank.coreWords,
             extendedWords: CommonWordBank.extendedWords,
-            dailyQuota: 20
+            dailyQuota: Self.dailyWordQuota
         )
         self.meetingPhraseStore = WordCarouselStore(
             defaults: defaults,
@@ -225,6 +230,10 @@ final class AppModel: ObservableObject {
         }
         self.popoverController.onDailyWordPractice = { [weak self] card in
             self?.practiceDesktopDailyWord(card)
+        }
+        self.popoverController.onStartNextDailyWordGroup = { [weak self] in
+            self?.startNextDailyWordGroup()
+            self?.showDesktopDailyWordInvite()
         }
         self.popoverController.onAddToLearning = { [weak self] result in
             self?.addLookupToLearningFromBubble(result)
@@ -353,13 +362,23 @@ final class AppModel: ObservableObject {
     }
 
     var dailyWordProgressText: String {
-        guard !dailyWordCards.isEmpty else { return "今日暂无可学习单词" }
-        let shownIndex = min(currentDailyWordIndex, dailyWordCards.count - 1) + 1
-        let base = "今日单词 \(shownIndex)/\(dailyWordCards.count)"
+        let base = DailyWordProgress.statusText(
+            masteredToday: todayMasteredWordCount,
+            quota: todayDailyWordTarget,
+            hasAvailableCard: currentDailyWordCard != nil
+        )
         if todayReviewCount > 0 {
             return "\(base) · 复习 \(todayReviewCount)"
         }
         return base
+    }
+
+    var hasCompletedDailyWordTarget: Bool {
+        todayMasteredWordCount >= todayDailyWordTarget
+    }
+
+    var dailyWordGroupSize: Int {
+        Self.dailyWordQuota
     }
 
     var currentMeetingPhraseCard: MeetingPhraseCard? {
@@ -454,7 +473,7 @@ final class AppModel: ObservableObject {
     /// that haven't been answered yet + new words that haven't been marked
     /// mastered yet. This drives the Dock badge.
     var pendingLearningTaskCount: Int {
-        let unmasteredToday = max(0, todayWordDeckCount - todayMasteredWordCount)
+        let unmasteredToday = max(0, todayDailyWordTarget - todayMasteredWordCount)
         let unmasteredPhrases = max(0, meetingPhraseTodayCount - meetingPhraseTodayMasteredCount)
         return todayReviewCount + unmasteredToday + meetingPhraseReviewCount + unmasteredPhrases
     }
@@ -480,8 +499,10 @@ final class AppModel: ObservableObject {
         let snapshot = wordCarouselStore.snapshot()
         todayWordDeckCount = snapshot.todayWords.count
         todayMasteredWordCount = snapshot.todayMasteredCount
+        todayDailyWordTarget = snapshot.dailyTarget
         totalMasteredWordCount = snapshot.totalMasteredCount
         allMasteredWords = snapshot.masteredWords.sorted()
+        refreshMasteredWordItems(from: snapshot.masteredRecords)
         todayReviewCount = snapshot.reviewDueWords.count
 
         // Combine review-due words (front) with fresh today words. They can't
@@ -506,7 +527,12 @@ final class AppModel: ObservableObject {
                 example: CommonWordBank.exampleSentence(for: entry.word),
                 provider: "Word Bank",
                 isMastered: snapshot.masteredWords.contains(entry.word),
-                isReview: entry.isReview
+                isReview: entry.isReview,
+                progressBadgeText: DailyWordProgress.bubbleBadgeText(
+                    masteredToday: snapshot.todayMasteredCount,
+                    quota: snapshot.dailyTarget,
+                    isReview: entry.isReview
+                )
             )
 
             if let cached = wordDefinitionCache[entry.word] {
@@ -581,6 +607,57 @@ final class AppModel: ObservableObject {
         wordCarouselStore.unmarkMastered(word: word)
         refreshWordCarouselIfNeeded()
         statusMessage = "已取消熟悉：\(word)，会重新进入后续学习"
+    }
+
+    func startNextDailyWordGroup() {
+        wordCarouselStore.expandTodayTarget()
+        refreshWordCarouselIfNeeded()
+        let nextIndex = min(todayMasteredWordCount + 1, todayDailyWordTarget)
+        statusMessage = "已开启下一组：今日单词 \(nextIndex)/\(todayDailyWordTarget)"
+    }
+
+    func loadMasteredWordDefinitionsIfNeeded() {
+        let missingWords = masteredWordItems
+            .filter { $0.translation == nil && $0.definition == nil }
+            .map(\.word)
+        guard !missingWords.isEmpty else { return }
+
+        Task { [weak self] in
+            guard let self else { return }
+            for word in missingWords {
+                guard self.wordDefinitionCache[word] == nil else { continue }
+                if let entry = await self.masteredWordDictionary.lookup(word) {
+                    let result = TranslationResult(
+                        originalText: word,
+                        translatedText: entry.translation,
+                        phonetic: entry.phonetic,
+                        explanations: entry.definition?
+                            .split(separator: "\n")
+                            .map { String($0).trimmed }
+                            .filter { !$0.isEmpty } ?? [],
+                        provider: "ECDICT 本地词典",
+                        direction: .englishToChinese
+                    )
+                    self.wordDefinitionCache[word] = result
+                }
+            }
+            self.refreshMasteredWordItems(from: self.wordCarouselStore.snapshot().masteredRecords)
+        }
+    }
+
+    private func refreshMasteredWordItems(from records: [MasteredWordRecord]) {
+        masteredWordItems = records.map { record in
+            let definition = wordDefinitionCache[record.word]
+            return MasteredWordListItem(
+                word: record.word,
+                masteredAt: record.masteredAt,
+                phonetic: definition?.phonetic,
+                translation: definition?.translatedText,
+                definition: definition?.explanations.first,
+                nextReviewDue: record.isGraduated ? nil : record.nextReviewDue,
+                isGraduated: record.isGraduated
+            )
+        }
     }
 
     // MARK: - 会议口语句块动作
@@ -910,8 +987,21 @@ final class AppModel: ObservableObject {
     private func showDesktopDailyWordInvite() {
         guard translationPresentationMode == .floating else { return }
 
+        if hasCompletedDailyWordTarget {
+            popoverController.presentDailyWordCompletion(
+                message: DailyWordProgress.completionMessage(
+                    quota: todayDailyWordTarget,
+                    groupSize: Self.dailyWordQuota
+                )
+            )
+            return
+        }
+
         guard let card = currentDailyWordCard else {
-            popoverController.presentFeedback(title: "今日单词", message: "今天暂无可学习单词")
+            popoverController.presentFeedback(
+                title: "今日单词",
+                message: "今天暂无可学习单词"
+            )
             return
         }
 

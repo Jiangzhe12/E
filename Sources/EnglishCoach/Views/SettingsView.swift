@@ -36,10 +36,10 @@ struct SettingsView: View {
 
                 switch model.translationEngine {
                 case .localCLI:
-                    Label("使用本机已登录的 Claude Code，无需 API Key（句子翻译约需几秒）。", systemImage: "terminal")
+                    Label("使用本机已登录的 Claude Code，无需 API Key；已禁用工具并在临时目录隔离运行。", systemImage: "terminal")
                         .font(.caption)
                         .foregroundStyle(Color(red: 0.22, green: 0.58, blue: 0.32))
-                    Text("前提：这台机器已安装 Claude Code 并完成登录。")
+                    Text("前提：这台机器已安装 Claude Code 并完成登录。句子翻译仍会比 API 慢，但不应请求访问你的项目文件。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 case .apiKey:

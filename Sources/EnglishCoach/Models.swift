@@ -100,7 +100,7 @@ enum TranslationEngine: String, CaseIterable, Identifiable, Codable {
 
     var displayLabel: String {
         switch self {
-        case .localCLI: return "本地 Claude CLI（无需 Key）"
+        case .localCLI: return "本地 Claude CLI（安全隔离）"
         case .apiKey: return "Claude API Key"
         case .freeOnly: return "仅免费（MyMemory）"
         }
@@ -213,6 +213,18 @@ struct DesktopWordCard: Identifiable {
     /// fresh "today's words" pool. UI uses this to switch the action buttons
     /// from "标记熟悉" to "还记得 / 忘了".
     var isReview: Bool = false
+    var progressBadgeText: String? = nil
+}
+
+struct MasteredWordListItem: Identifiable {
+    var id: String { word }
+    let word: String
+    let masteredAt: Date
+    let phonetic: String?
+    let translation: String?
+    let definition: String?
+    let nextReviewDue: Date?
+    let isGraduated: Bool
 }
 
 extension String {
