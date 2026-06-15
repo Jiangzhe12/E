@@ -7,6 +7,7 @@ import SwiftUI
 final class TranslationPopoverController {
     private var panel: NSPanel?
     private var autoDismissTimer: Timer?
+    private var autoDismissAction: (() -> Void)?
     private var globalClickMonitor: Any?
     private let desktopPetState = DesktopPetPresentationState()
     private let desktopPetLayoutMetrics = DesktopPetLayoutMetrics()
@@ -99,8 +100,7 @@ final class TranslationPopoverController {
     }
 
     func hideDesktopPet() {
-        autoDismissTimer?.invalidate()
-        autoDismissTimer = nil
+        cancelAutoDismissTimer()
         removeGlobalClickMonitor()
         desktopPetState.clearBubble()
         if let panel {
@@ -111,6 +111,7 @@ final class TranslationPopoverController {
     }
 
     func presentTranslating(text: String, near point: NSPoint) {
+        cancelAutoDismissTimer()
         let panel = ensureDesktopPetPanel()
         presentDesktopPetBubble(panel, near: point) {
             desktopPetState.showTranslating(text)
@@ -128,23 +129,28 @@ final class TranslationPopoverController {
     }
 
     func presentDailyWordInvite(card: DesktopWordCard) {
+        cancelAutoDismissTimer()
         let panel = ensureDesktopPetPanel()
         presentDesktopPetBubble(panel, near: nil) {
             desktopPetState.showDailyWordInvite(card)
         }
     }
 
-    func presentFeedback(title: String, message: String) {
+    func presentFeedback(
+        title: String,
+        message: String,
+        autoDismissAfter seconds: TimeInterval = DesktopPetBubbleTiming.defaultAutoDismissSeconds,
+        onAutoDismiss: (() -> Void)? = nil
+    ) {
         let panel = ensureDesktopPetPanel()
         presentDesktopPetBubble(panel, near: nil) {
             desktopPetState.showFeedback(title: title, message: message)
         }
-        startAutoDismissTimer()
+        startAutoDismissTimer(after: seconds, onDismiss: onAutoDismiss)
     }
 
     func dismiss() {
-        autoDismissTimer?.invalidate()
-        autoDismissTimer = nil
+        cancelAutoDismissTimer()
         removeGlobalClickMonitor()
         if let panel, panel.isVisible {
             syncDesktopPetAnchor(from: panel)
@@ -394,15 +400,34 @@ final class TranslationPopoverController {
         withTransaction(transaction, body)
     }
 
-    private func startAutoDismissTimer() {
+    private func cancelAutoDismissTimer() {
         autoDismissTimer?.invalidate()
-        let timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
+        autoDismissTimer = nil
+        autoDismissAction = nil
+    }
+
+    private func startAutoDismissTimer(
+        after seconds: TimeInterval = DesktopPetBubbleTiming.defaultAutoDismissSeconds,
+        onDismiss: (() -> Void)? = nil
+    ) {
+        cancelAutoDismissTimer()
+        autoDismissAction = onDismiss
+        let timer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.dismiss()
+                self?.handleAutoDismissTimerFired()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         autoDismissTimer = timer
+    }
+
+    private func handleAutoDismissTimerFired() {
+        let action = autoDismissAction
+        autoDismissAction = nil
+        autoDismissTimer?.invalidate()
+        autoDismissTimer = nil
+        dismiss()
+        action?()
     }
 
     private func installGlobalClickMonitorIfNeeded() {

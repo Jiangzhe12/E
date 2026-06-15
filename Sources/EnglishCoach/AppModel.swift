@@ -926,10 +926,10 @@ final class AppModel: ObservableObject {
 
         if card.isReview {
             rememberCurrentWord()
-            popoverController.presentFeedback(title: "复习完成", message: "\(card.word) 已进入下次复习")
+            presentDailyWordFeedbackAndAdvance(title: "复习完成", message: "\(card.word) 已进入下次复习")
         } else {
             markCurrentWordAsMastered()
-            popoverController.presentFeedback(title: "记住了", message: "\(card.word) 已加入复习节奏")
+            presentDailyWordFeedbackAndAdvance(title: "记住了", message: "\(card.word) 已加入复习节奏")
         }
     }
 
@@ -943,8 +943,19 @@ final class AppModel: ObservableObject {
             forgotCurrentWord()
         } else {
             statusMessage = "稍后再练：\(card.word)"
+            showNextDailyWord()
         }
-        popoverController.presentFeedback(title: "稍后再练", message: "\(card.word) 会继续留在学习队列")
+        presentDailyWordFeedbackAndAdvance(title: "稍后再练", message: "\(card.word) 会继续留在学习队列")
+    }
+
+    private func presentDailyWordFeedbackAndAdvance(title: String, message: String) {
+        popoverController.presentFeedback(
+            title: title,
+            message: message,
+            autoDismissAfter: DesktopPetBubbleTiming.dailyWordFeedbackAutoAdvanceSeconds
+        ) { [weak self] in
+            self?.showDesktopDailyWordInvite()
+        }
     }
 
     func translateFromManualInput() {
@@ -1009,8 +1020,8 @@ final class AppModel: ObservableObject {
     func translateForQuickPanel(_ text: String, direction: TranslationDirection? = nil) async -> TranslationResult? {
         let cleaned = text.trimmed
         guard !cleaned.isEmpty else { return nil }
-        guard cleaned.count <= 500 else {
-            statusMessage = "一次最多翻译 500 个字符"
+        guard cleaned.count <= TranslationLimits.maxCharacters else {
+            statusMessage = "一次最多翻译 \(TranslationLimits.maxCharacters) 个字符"
             return nil
         }
         do {
@@ -1273,10 +1284,13 @@ final class AppModel: ObservableObject {
             return
         }
 
-        if cleanedText.count > 500 {
-            statusMessage = "一次最多翻译 500 个字符，再长建议分段"
+        if cleanedText.count > TranslationLimits.maxCharacters {
+            statusMessage = "一次最多翻译 \(TranslationLimits.maxCharacters) 个字符，再长建议分段"
             if presentation == .floating {
-                popoverController.presentFeedback(title: "内容太长", message: "一次最多翻译 500 个字符")
+                popoverController.presentFeedback(
+                    title: "内容太长",
+                    message: "一次最多翻译 \(TranslationLimits.maxCharacters) 个字符"
+                )
             }
             return
         }

@@ -114,7 +114,7 @@ final class SelectedTextService {
         guard sentence.count > selectedText.trimmed.count else { return nil }
         // Guard against pathologically long blobs (selection inside a giant
         // textarea with no sentence punctuation).
-        guard sentence.count <= 500 else { return nil }
+        guard sentence.count <= TranslationLimits.maxCharacters else { return nil }
         return sentence
     }
 
