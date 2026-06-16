@@ -24,7 +24,7 @@ struct ShortcutHelpView: View {
                 ShortcutItem(keys: ["⌘", "E"], description: "打开快速翻译输入窗口"),
                 ShortcutItem(keys: ["⌘", "C"], description: "连按两次：翻译当前选中的文本"),
                 ShortcutItem(keys: ["⇧", "⌘", "T"], description: "翻译剪贴板里的内容"),
-                ShortcutItem(keys: ["⌘", "⏎"], description: "在菜单栏浮窗里提交翻译"),
+                ShortcutItem(keys: ["⌘", "⏎"], description: "在快速翻译浮窗里提交翻译"),
                 ShortcutItem(keys: ["Esc"], description: "关闭翻译浮窗 / 弹出的 sheet")
             ]
         ),

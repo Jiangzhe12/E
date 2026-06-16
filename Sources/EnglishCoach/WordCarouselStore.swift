@@ -155,17 +155,18 @@ final class WordCarouselStore {
         let now = dateProvider()
         let todayKey = dayKey(for: now)
         let masteredSet = Set(state.masteredWords)
+        let unavailableWords = unavailableWords(in: state)
 
         if state.dayKey != todayKey {
             state.dayKey = todayKey
             state.dailyTarget = dailyQuota
             state.todayWords = buildDailyWords(
                 dayKey: todayKey,
-                masteredWords: masteredSet
+                unavailableWords: unavailableWords
             )
         } else {
             state.dailyTarget = max(dailyQuota, state.dailyTarget)
-            state.todayWords = state.todayWords.filter { !masteredSet.contains($0) }
+            state.todayWords = state.todayWords.filter { !unavailableWords.contains($0) }
             normalizeTodayWords(state: &state)
         }
 
@@ -182,7 +183,7 @@ final class WordCarouselStore {
         // regardless of the daily quota. They are kept out of the persisted
         // `todayWords` (which stays bank-only so the quota refill stays sane)
         // and merged into the returned deck here.
-        let pendingCustom = state.customWords.filter { !masteredSet.contains($0) }
+        let pendingCustom = state.customWords.filter { !unavailableWords.contains($0) }
         var deckSeen = Set(state.todayWords)
         var customPrefix: [String] = []
         for word in pendingCustom where deckSeen.insert(word).inserted {
@@ -206,6 +207,7 @@ final class WordCarouselStore {
             reviewDueWords: reviewDueWords,
             masteredWords: Set(state.masteredWords),
             masteredRecords: state.masteryRecords
+                .filter { masteredSet.contains($0.word) }
                 .map { record in
                     MasteredWordRecord(
                         word: record.word,
@@ -248,22 +250,56 @@ final class WordCarouselStore {
         let now = dateProvider()
         let firstReviewDue = calendar.date(byAdding: .day, value: 1, to: now)
             ?? now.addingTimeInterval(86_400)
-        state.masteryRecords.append(
-            MasteryRecord(
-                word: normalized,
-                masteredAt: now,
-                reviewStage: 0,
-                nextReviewDue: firstReviewDue
-            )
+        upsertMasteryRecord(
+            &state,
+            word: normalized,
+            masteredAt: now,
+            reviewStage: 0,
+            nextReviewDue: firstReviewDue
         )
 
         let todayKey = dayKey(for: now)
         if state.dayKey != todayKey {
             state.dayKey = todayKey
             state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, masteredWords: masteredSet)
+            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
         } else {
             state.todayWords.removeAll { $0 == normalized }
+            state.customWords.removeAll { $0 == normalized }
+            normalizeTodayWords(state: &state)
+        }
+
+        persistState(state)
+    }
+
+    /// User saw the word today but marked it as unfamiliar. It counts toward
+    /// today's learning quota and leaves today's deck, but does not enter the
+    /// mastered-word set. The SRS record brings it back for focused practice.
+    func markNeedsPractice(word: String) {
+        let normalized = Self.normalize(word)
+        guard !normalized.isEmpty else { return }
+
+        var state = loadState()
+        let now = dateProvider()
+        let firstReviewDue = calendar.date(byAdding: .day, value: 1, to: now)
+            ?? now.addingTimeInterval(86_400)
+
+        upsertMasteryRecord(
+            &state,
+            word: normalized,
+            masteredAt: now,
+            reviewStage: 0,
+            nextReviewDue: firstReviewDue
+        )
+
+        let todayKey = dayKey(for: now)
+        if state.dayKey != todayKey {
+            state.dayKey = todayKey
+            state.dailyTarget = dailyQuota
+            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
+        } else {
+            state.todayWords.removeAll { $0 == normalized }
+            state.customWords.removeAll { $0 == normalized }
             normalizeTodayWords(state: &state)
         }
 
@@ -286,7 +322,7 @@ final class WordCarouselStore {
         if state.dayKey != todayKey {
             state.dayKey = todayKey
             state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, masteredWords: masteredSet)
+            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
         } else {
             normalizeTodayWords(state: &state)
         }
@@ -298,17 +334,17 @@ final class WordCarouselStore {
         var state = loadState()
         let now = dateProvider()
         let todayKey = dayKey(for: now)
-        let masteredSet = Set(state.masteredWords)
 
         if state.dayKey != todayKey {
             state.dayKey = todayKey
             state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, masteredWords: masteredSet)
+            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
         }
 
         state.dailyTarget = max(dailyQuota, state.dailyTarget) + dailyQuota
-        state.todayWords.removeAll { masteredSet.contains($0) }
-        fillTodayWordsIfNeeded(state: &state, dayKey: todayKey, masteredWords: masteredSet)
+        let unavailableWords = unavailableWords(in: state)
+        state.todayWords.removeAll { unavailableWords.contains($0) }
+        fillTodayWordsIfNeeded(state: &state, dayKey: todayKey, unavailableWords: unavailableWords)
 
         persistState(state)
     }
@@ -324,6 +360,9 @@ final class WordCarouselStore {
         var state = loadState()
         if Set(state.masteredWords).contains(normalized) {
             return .alreadyMastered
+        }
+        if state.masteryRecords.contains(where: { $0.word == normalized }) {
+            return .alreadyLearning
         }
 
         let alreadyTracked = state.customWords.contains(normalized)
@@ -415,7 +454,7 @@ final class WordCarouselStore {
     private func fillTodayWordsIfNeeded(
         state: inout PersistedState,
         dayKey: String,
-        masteredWords: Set<String>
+        unavailableWords: Set<String>
     ) {
         normalizeTodayWords(state: &state)
 
@@ -424,7 +463,7 @@ final class WordCarouselStore {
         guard state.todayWords.count < desiredActiveCount else { return }
 
         var seen = Set(state.todayWords)
-        let candidateWords = candidatePool(masteredWords: masteredWords)
+        let candidateWords = candidatePool(unavailableWords: unavailableWords)
         let candidates = deterministicSelection(
             from: candidateWords,
             dayKey: "\(dayKey)-\(state.dailyTarget)",
@@ -439,21 +478,51 @@ final class WordCarouselStore {
         }
     }
 
-    private func buildDailyWords(dayKey: String, masteredWords: Set<String>) -> [String] {
-        let candidates = candidatePool(masteredWords: masteredWords)
+    private func buildDailyWords(dayKey: String, unavailableWords: Set<String>) -> [String] {
+        let candidates = candidatePool(unavailableWords: unavailableWords)
         guard !candidates.isEmpty else { return [] }
         return deterministicSelection(from: candidates, dayKey: dayKey, limit: min(dailyQuota, candidates.count))
     }
 
-    private func candidatePool(masteredWords: Set<String>) -> [String] {
-        let coreAvailable = coreWords.filter { !masteredWords.contains($0) }
-        let extendedAvailable = extendedWords.filter { !masteredWords.contains($0) && !coreWords.contains($0) }
+    private func candidatePool(unavailableWords: Set<String>) -> [String] {
+        let coreAvailable = coreWords.filter { !unavailableWords.contains($0) }
+        let extendedAvailable = extendedWords.filter { !unavailableWords.contains($0) && !coreWords.contains($0) }
 
         if coreAvailable.count >= dailyQuota {
             return coreAvailable
         }
 
         return coreAvailable + extendedAvailable
+    }
+
+    private func unavailableWords(in state: PersistedState) -> Set<String> {
+        Set(state.masteredWords).union(state.masteryRecords.map(\.word))
+    }
+
+    private func upsertMasteryRecord(
+        _ state: inout PersistedState,
+        word: String,
+        masteredAt: Date,
+        reviewStage: Int,
+        nextReviewDue: Date
+    ) {
+        if let index = state.masteryRecords.firstIndex(where: { $0.word == word }) {
+            state.masteryRecords[index] = MasteryRecord(
+                word: word,
+                masteredAt: masteredAt,
+                reviewStage: reviewStage,
+                nextReviewDue: nextReviewDue
+            )
+        } else {
+            state.masteryRecords.append(
+                MasteryRecord(
+                    word: word,
+                    masteredAt: masteredAt,
+                    reviewStage: reviewStage,
+                    nextReviewDue: nextReviewDue
+                )
+            )
+        }
     }
 
     private func deterministicSelection(from words: [String], dayKey: String, limit: Int) -> [String] {

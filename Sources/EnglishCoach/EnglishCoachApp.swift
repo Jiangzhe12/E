@@ -35,11 +35,6 @@ struct EnglishCoachApp: App {
         }
         .windowResizability(.contentMinSize)
 
-        MenuBarExtra("English Coach", systemImage: "character.book.closed") {
-            MenubarPopoverView(model: model)
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
             SettingsView(model: model)
         }

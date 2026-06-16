@@ -3,6 +3,7 @@ import SwiftUI
 
 enum DesktopPetBubble {
     case none
+    case actionMenu
     case translating(String)
     case translation(result: TranslationResult, sourceAppName: String?)
     case dailyWordInvite(DesktopWordCard)
@@ -23,6 +24,7 @@ enum DesktopPetMood {
 final class DesktopPetPresentationState: ObservableObject {
     @Published var bubble: DesktopPetBubble = .none
     @Published var bubblePlacement: DesktopPetBubblePlacement = .aboveLeft
+    @Published var edgeAttachment: DesktopPetEdgeAttachment = .none
     @Published private(set) var bubbleID = UUID()
 
     var content: DesktopPetBubbleContent? {
@@ -41,6 +43,8 @@ final class DesktopPetPresentationState: ObservableObject {
         switch bubble {
         case .none:
             return .idle
+        case .actionMenu:
+            return .result
         case .translating:
             return .translating
         case .translation:
@@ -59,8 +63,17 @@ final class DesktopPetPresentationState: ObservableObject {
         bubbleID = UUID()
     }
 
+    func showActionMenu() {
+        bubble = .actionMenu
+        bubbleID = UUID()
+    }
+
     func setBubblePlacement(_ placement: DesktopPetBubblePlacement) {
         bubblePlacement = placement
+    }
+
+    func setEdgeAttachment(_ attachment: DesktopPetEdgeAttachment) {
+        edgeAttachment = attachment
     }
 
     func showTranslating(_ text: String) {
@@ -98,6 +111,11 @@ struct DesktopPetTranslationView: View {
     @ObservedObject var state: DesktopPetPresentationState
     let onCopy: (TranslationResult) -> Void
     let onOpenMainWindow: () -> Void
+    let onQuickTranslate: () -> Void
+    let onTranslateClipboard: () -> Void
+    let onShowDailyWord: () -> Void
+    let onShowLastTranslation: () -> Void
+    let onQuitApp: () -> Void
     let onSpeak: (TranslationResult) -> Void
     let onAddToLearning: (TranslationResult) -> Void
     let onCloseBubble: () -> Void
@@ -146,6 +164,19 @@ struct DesktopPetTranslationView: View {
         state.bubblePlacement.vertical == .below ? .top : .bottom
     }
 
+    private var bubbleLayerEdgeOffset: CGFloat {
+        let metrics = DesktopPetLayoutMetrics()
+        let hiddenWidth = metrics.idlePanelSize.width - metrics.edgeClingVisibleWidth
+        switch state.edgeAttachment {
+        case .left:
+            return hiddenWidth
+        case .right:
+            return -hiddenWidth
+        case .none:
+            return 0
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(alignment: stackAlignment, spacing: 0) {
@@ -171,79 +202,96 @@ struct DesktopPetTranslationView: View {
 
     @ViewBuilder
     private var bubbleLayer: some View {
-        switch state.bubble {
-        case .none:
-            EmptyView()
-        case let .translating(text):
-            DesktopPetTranslatingBubbleView(
-                text: text,
-                tailOffset: bubbleTailOffset,
-                tailPosition: bubbleTailPosition,
-                onCloseBubble: onCloseBubble
-            )
-            .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
-        case let .translation(result, _):
-            if let content = state.content {
-                DesktopPetTranslationBubbleView(
-                    content: content,
-                    result: result,
+        Group {
+            switch state.bubble {
+            case .none:
+                EmptyView()
+            case .actionMenu:
+                DesktopPetActionMenuBubbleView(
                     tailOffset: bubbleTailOffset,
                     tailPosition: bubbleTailPosition,
-                    onCopy: onCopy,
+                    onQuickTranslate: onQuickTranslate,
+                    onTranslateClipboard: onTranslateClipboard,
+                    onShowDailyWord: onShowDailyWord,
+                    onShowLastTranslation: onShowLastTranslation,
                     onOpenMainWindow: onOpenMainWindow,
-                    onSpeak: onSpeak,
-                    onAddToLearning: onAddToLearning,
+                    onQuitApp: onQuitApp,
                     onCloseBubble: onCloseBubble
                 )
                 .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
-            }
-        case let .dailyWordInvite(card):
+            case let .translating(text):
+                DesktopPetTranslatingBubbleView(
+                    text: text,
+                    tailOffset: bubbleTailOffset,
+                    tailPosition: bubbleTailPosition,
+                    onCloseBubble: onCloseBubble
+                )
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            case let .translation(result, _):
+                if let content = state.content {
+                    DesktopPetTranslationBubbleView(
+                        content: content,
+                        result: result,
+                        tailOffset: bubbleTailOffset,
+                        tailPosition: bubbleTailPosition,
+                        onCopy: onCopy,
+                        onOpenMainWindow: onOpenMainWindow,
+                        onSpeak: onSpeak,
+                        onAddToLearning: onAddToLearning,
+                        onCloseBubble: onCloseBubble
+                    )
+                    .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+                }
+            case let .dailyWordInvite(card):
             DesktopPetDailyWordInviteBubbleView(
                 card: card,
                 tailOffset: bubbleTailOffset,
                 tailPosition: bubbleTailPosition,
                 onReveal: { onShowDailyWordMeaning(card) },
                 onSpeak: { onSpeakDailyWord(card) },
-                onLater: onCloseBubble
-            )
-            .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
-        case let .dailyWordMeaning(card):
-            DesktopPetDailyWordMeaningBubbleView(
-                card: card,
-                tailOffset: bubbleTailOffset,
-                tailPosition: bubbleTailPosition,
-                onComplete: { onDailyWordComplete(card) },
-                onPractice: { onDailyWordPractice(card) },
-                onSpeak: { onSpeakDailyWord(card) },
                 onCloseBubble: onCloseBubble
             )
-            .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
-        case let .dailyWordCompletion(message):
-            DesktopPetDailyWordCompletionBubbleView(
-                message: message,
-                tailOffset: bubbleTailOffset,
-                tailPosition: bubbleTailPosition,
-                onStartNextGroup: onStartNextDailyWordGroup,
-                onCloseBubble: onCloseBubble
-            )
-            .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
-        case let .feedback(title, message):
-            DesktopPetFeedbackBubbleView(
-                title: title,
-                message: message,
-                tailOffset: bubbleTailOffset,
-                tailPosition: bubbleTailPosition,
-                onCloseBubble: onCloseBubble
-            )
-            .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            case let .dailyWordMeaning(card):
+                DesktopPetDailyWordMeaningBubbleView(
+                    card: card,
+                    tailOffset: bubbleTailOffset,
+                    tailPosition: bubbleTailPosition,
+                    onComplete: { onDailyWordComplete(card) },
+                    onPractice: { onDailyWordPractice(card) },
+                    onSpeak: { onSpeakDailyWord(card) },
+                    onCloseBubble: onCloseBubble
+                )
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            case let .dailyWordCompletion(message):
+                DesktopPetDailyWordCompletionBubbleView(
+                    message: message,
+                    tailOffset: bubbleTailOffset,
+                    tailPosition: bubbleTailPosition,
+                    onStartNextGroup: onStartNextDailyWordGroup,
+                    onCloseBubble: onCloseBubble
+                )
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            case let .feedback(title, message):
+                DesktopPetFeedbackBubbleView(
+                    title: title,
+                    message: message,
+                    tailOffset: bubbleTailOffset,
+                    tailPosition: bubbleTailPosition,
+                    onCloseBubble: onCloseBubble
+                )
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            }
         }
+        .offset(x: bubbleLayerEdgeOffset)
     }
 
     private var mascotLayer: some View {
         DesktopPetMascotView(
             isShowingBubble: state.hasBubble,
             mood: state.mood,
-            isHovering: isHovering
+            isHovering: isHovering,
+            edgeAttachment: state.edgeAttachment
         )
             .offset(y: isFloating ? -4 : 2)
             .animation(
@@ -255,7 +303,7 @@ struct DesktopPetTranslationView: View {
             .contentShape(Rectangle())
             .overlay(
                 PetMouseCatcher(
-                    toolTip: "左键：今日单词 · 右键：上次翻译",
+                    toolTip: "左键：功能菜单 · 右键：上次翻译",
                     onLeftClick: onPetTap,
                     onRightClick: onPetSecondaryTap,
                     onHoverChange: { isHovering = $0 }
@@ -429,49 +477,35 @@ private struct DesktopPetTranslationBubbleView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Button {
-                        onCopy(result)
-                    } label: {
-                        Label("复制", systemImage: "doc.on.doc")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
-                    .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        title: "复制",
+                        systemImage: "doc.on.doc.fill",
+                        visualStyle: .copy,
+                        action: { onCopy(result) }
+                    )
 
-                    Button {
-                        onSpeak(result)
-                    } label: {
-                        Image(systemName: "speaker.wave.2.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
-                    .help("朗读原文")
-                    .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        systemImage: "speaker.wave.2.fill",
+                        visualStyle: .speak,
+                        help: "朗读原文",
+                        action: { onSpeak(result) }
+                    )
 
                     if canAddToLearning {
-                        Button {
-                            onAddToLearning(result)
-                        } label: {
-                            Image(systemName: "text.badge.plus")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .tint(Color(red: 0.46, green: 0.86, blue: 0.58))
-                        .help("加入生词本")
-                        .bubbleClickableHover()
+                        DesktopPetCompactButton(
+                            systemImage: "text.badge.plus",
+                            visualStyle: .learn,
+                            help: "加入生词本",
+                            action: { onAddToLearning(result) }
+                        )
                     }
 
-                    Button {
-                        onOpenMainWindow()
-                    } label: {
-                        Label("展开", systemImage: "rectangle.arrowtriangle.2.outward")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
-                    .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        title: "展开",
+                        systemImage: "rectangle.arrowtriangle.2.outward",
+                        visualStyle: .secondary,
+                        action: onOpenMainWindow
+                    )
 
                     Spacer()
 
@@ -482,6 +516,264 @@ private struct DesktopPetTranslationBubbleView: View {
                 }
             }
         }
+    }
+}
+
+private struct DesktopPetActionMenuBubbleView: View {
+    let tailOffset: CGFloat
+    let tailPosition: DesktopPetBubbleTailPosition
+    let onQuickTranslate: () -> Void
+    let onTranslateClipboard: () -> Void
+    let onShowDailyWord: () -> Void
+    let onShowLastTranslation: () -> Void
+    let onOpenMainWindow: () -> Void
+    let onQuitApp: () -> Void
+    let onCloseBubble: () -> Void
+
+    var body: some View {
+        DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
+            VStack(alignment: .leading, spacing: 10) {
+                DesktopPetBubbleHeader(
+                    icon: "sparkles",
+                    title: "EnglishCoach",
+                    onCloseBubble: onCloseBubble
+                )
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 8),
+                        GridItem(.flexible(), spacing: 8)
+                    ],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(DesktopPetActionMenuItem.defaultItems) { item in
+                        DesktopPetActionMenuButton(item: item) {
+                            perform(item.action)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func perform(_ action: DesktopPetActionMenuItem.Action) {
+        switch action {
+        case .quickTranslate:
+            onQuickTranslate()
+        case .translateClipboard:
+            onTranslateClipboard()
+        case .dailyWord:
+            onShowDailyWord()
+        case .lastTranslation:
+            onShowLastTranslation()
+        case .openMainWindow:
+            onOpenMainWindow()
+        case .quit:
+            onQuitApp()
+        }
+    }
+}
+
+private struct DesktopPetActionMenuButton: View {
+    let item: DesktopPetActionMenuItem
+    let action: () -> Void
+    @State private var isHovering = false
+
+    private var style: DesktopPetActionMenuVisualStyle {
+        item.visualStyle
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    style.accentColor.opacity(0.25),
+                                    style.accentColor.opacity(0.10)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(style.accentColor.opacity(0.42), lineWidth: 1)
+                        )
+
+                    Image(systemName: item.systemImage)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(style.accentColor)
+                }
+                .frame(width: 26, height: 26)
+
+                Text(item.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(item.action == .quit
+                        ? Color(red: 1.0, green: 0.83, blue: 0.84)
+                        : Color(red: 0.90, green: 0.99, blue: 1.0))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .padding(.horizontal, 9)
+            .background {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                style.fillColor.opacity(isHovering ? 0.96 : 0.80),
+                                Color(red: 0.04, green: 0.08, blue: 0.24).opacity(0.88)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(style.borderColor.opacity(isHovering ? 0.78 : 0.34), lineWidth: 1)
+                    )
+                    .shadow(color: style.accentColor.opacity(isHovering ? 0.24 : 0.10), radius: isHovering ? 8 : 4, x: 0, y: 4)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(DesktopPetActionMenuButtonStyle(isHovering: isHovering))
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: isHovering)
+    }
+}
+
+private struct DesktopPetActionMenuButtonStyle: ButtonStyle {
+    let isHovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : (isHovering ? 1.025 : 1.0))
+            .brightness(configuration.isPressed ? -0.03 : (isHovering ? 0.05 : 0))
+            .animation(.easeOut(duration: 0.10), value: configuration.isPressed)
+    }
+}
+
+private struct DesktopPetCompactButton: View {
+    var title: String?
+    let systemImage: String
+    let visualStyle: DesktopPetCompactButtonVisualStyle
+    var help: String?
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: title == nil ? 0 : 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(visualStyle.accentColor)
+                    .frame(width: title == nil ? 22 : 18, height: 18)
+
+                if let title {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.92, green: 0.99, blue: 1.0))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+            }
+            .frame(minWidth: title == nil ? 42 : 76, minHeight: 30)
+            .padding(.horizontal, title == nil ? 4 : 10)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                visualStyle.fillColor.opacity(isHovering ? 0.98 : 0.84),
+                                Color(red: 0.04, green: 0.08, blue: 0.24).opacity(0.88)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(visualStyle.borderColor.opacity(isHovering ? 0.82 : 0.42), lineWidth: 1)
+                    )
+                    .shadow(color: visualStyle.accentColor.opacity(isHovering ? 0.28 : 0.12), radius: isHovering ? 7 : 4, x: 0, y: 3)
+            }
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(DesktopPetCompactButtonPressStyle(isHovering: isHovering))
+        .help(help ?? title ?? "")
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: isHovering)
+    }
+}
+
+private struct DesktopPetCompactButtonPressStyle: ButtonStyle {
+    let isHovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : (isHovering ? 1.04 : 1.0))
+            .brightness(configuration.isPressed ? -0.04 : (isHovering ? 0.06 : 0))
+            .animation(.easeOut(duration: 0.10), value: configuration.isPressed)
+    }
+}
+
+private extension DesktopPetActionMenuVisualStyle {
+    var accentColor: Color {
+        Color(desktopPetHex: accentHex)
+    }
+
+    var fillColor: Color {
+        Color(desktopPetHex: fillHex)
+    }
+
+    var borderColor: Color {
+        Color(desktopPetHex: borderHex)
+    }
+}
+
+private extension DesktopPetCompactButtonVisualStyle {
+    var accentColor: Color {
+        Color(desktopPetHex: accentHex)
+    }
+
+    var fillColor: Color {
+        Color(desktopPetHex: fillHex)
+    }
+
+    var borderColor: Color {
+        Color(desktopPetHex: borderHex)
+    }
+}
+
+private extension Color {
+    init(desktopPetHex hex: String) {
+        let sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        var value: UInt64 = 0
+        Scanner(string: sanitized).scanHexInt64(&value)
+        let red = Double((value >> 16) & 0xFF) / 255.0
+        let green = Double((value >> 8) & 0xFF) / 255.0
+        let blue = Double(value & 0xFF) / 255.0
+        self.init(red: red, green: green, blue: blue)
     }
 }
 
@@ -529,7 +821,7 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
     let tailPosition: DesktopPetBubbleTailPosition
     let onReveal: () -> Void
     let onSpeak: () -> Void
-    let onLater: () -> Void
+    let onCloseBubble: () -> Void
 
     var body: some View {
         DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
@@ -538,7 +830,7 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
                     icon: "tag.fill",
                     title: card.isReview ? "复习词" : "今日词",
                     trailingBadge: card.progressBadgeText,
-                    onCloseBubble: onLater
+                    onCloseBubble: onCloseBubble
                 )
 
                 Text(card.word)
@@ -555,32 +847,19 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Button {
-                        onSpeak()
-                    } label: {
-                        Image(systemName: "speaker.wave.2.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
-                    .help("朗读单词")
-                    .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        systemImage: "speaker.wave.2.fill",
+                        visualStyle: .speak,
+                        help: "朗读单词",
+                        action: onSpeak
+                    )
 
-                    Button {
-                        onReveal()
-                    } label: {
-                        Label("看释义", systemImage: "eye.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
-                    .bubbleClickableHover()
-
-                    Button("稍后", action: onLater)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
-                        .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        title: "看释义",
+                        systemImage: "eye.fill",
+                        visualStyle: .primary,
+                        action: onReveal
+                    )
                 }
             }
         }
@@ -634,28 +913,26 @@ private struct DesktopPetDailyWordMeaningBubbleView: View {
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
-                    Button {
-                        onSpeak()
-                    } label: {
-                        Image(systemName: "speaker.wave.2.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .tint(Color(red: 0.41, green: 0.89, blue: 1.0))
-                    .help("朗读")
-                    .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        systemImage: "speaker.wave.2.fill",
+                        visualStyle: .speak,
+                        help: "朗读",
+                        action: onSpeak
+                    )
 
-                    Button(primaryActionTitle, action: onComplete)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(Color(red: 0.18, green: 0.66, blue: 0.95))
-                        .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        title: primaryActionTitle,
+                        systemImage: "checkmark.seal.fill",
+                        visualStyle: .primary,
+                        action: onComplete
+                    )
 
-                    Button("再练", action: onPractice)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .tint(Color(red: 0.52, green: 0.46, blue: 0.95))
-                        .bubbleClickableHover()
+                    DesktopPetCompactButton(
+                        title: "不熟悉",
+                        systemImage: "exclamationmark.arrow.triangle.2.circlepath",
+                        visualStyle: .secondary,
+                        action: onPractice
+                    )
                 }
             }
         }
@@ -877,6 +1154,7 @@ private struct DesktopPetMascotView: View {
     let isShowingBubble: Bool
     let mood: DesktopPetMood
     let isHovering: Bool
+    let edgeAttachment: DesktopPetEdgeAttachment
 
     @State private var activityPulse = false
 
@@ -887,18 +1165,20 @@ private struct DesktopPetMascotView: View {
                     .offset(y: -16)
             }
 
-            Ellipse()
-                .fill(Color.black.opacity(isHovering ? 0.24 : 0.18))
-                .frame(width: isHovering ? 92 : 82, height: isHovering ? 15 : 13)
-                .blur(radius: isHovering ? 2.5 : 2)
-                .offset(y: 5)
+            if !edgeAttachment.isAttached {
+                Ellipse()
+                    .fill(Color.black.opacity(isHovering ? 0.24 : 0.18))
+                    .frame(width: isHovering ? 92 : 82, height: isHovering ? 15 : 13)
+                    .blur(radius: isHovering ? 2.5 : 2)
+                    .offset(y: 5)
+            }
 
-            if mood == .translating {
+            if mood == .translating && !edgeAttachment.isAttached {
                 DesktopPetFootRippleView()
                     .offset(y: 2)
             }
 
-            if let spriteImage = Self.spriteImage {
+            if let spriteImage {
                 Image(nsImage: spriteImage)
                     .resizable()
                     .interpolation(.none)
@@ -936,12 +1216,26 @@ private struct DesktopPetMascotView: View {
         .animation(.easeInOut(duration: pulseDuration).repeatForever(autoreverses: true), value: activityPulse)
     }
 
-    private static let spriteImage: NSImage? = {
-        guard let url = Bundle.main.url(forResource: "DesktopPetSprite", withExtension: "png") else {
-            return nil
+    private static let spriteImages: [String: NSImage] = {
+        let names = [
+            "DesktopPetSprite",
+            "DesktopPetPeekLeft",
+            "DesktopPetPeekRight"
+        ]
+        return names.reduce(into: [String: NSImage]()) { images, name in
+            guard
+                let url = Bundle.main.url(forResource: name, withExtension: "png"),
+                let image = NSImage(contentsOf: url)
+            else {
+                return
+            }
+            images[name] = image
         }
-        return NSImage(contentsOf: url)
     }()
+
+    private var spriteImage: NSImage? {
+        Self.spriteImages[DesktopPetMascotAsset.spriteName(for: edgeAttachment)]
+    }
 
     private var fallbackMascot: some View {
         RoundedRectangle(cornerRadius: 12, style: .continuous)

@@ -22,12 +22,24 @@ struct DesktopPetBubblePlacement: Equatable {
     static let belowRight = DesktopPetBubblePlacement(vertical: .below, horizontal: .right)
 }
 
+enum DesktopPetEdgeAttachment: Equatable {
+    case none
+    case left
+    case right
+
+    var isAttached: Bool {
+        self != .none
+    }
+}
+
 struct DesktopPetLayoutMetrics {
     var idlePanelSize = CGSize(width: 148, height: 156)
     var bubblePanelSize = CGSize(width: 424, height: 432)
     var mascotTrailingInset: CGFloat = 72
     var mascotAnchorYOffset: CGFloat = 78
     var screenMargin: CGFloat = 8
+    var edgeSnapThreshold: CGFloat = 18
+    var edgeClingVisibleWidth: CGFloat = 104
 }
 
 struct DesktopPetPanelLayout {
@@ -64,23 +76,56 @@ enum DesktopPetLayout {
         visibleFrame: CGRect,
         metrics: DesktopPetLayoutMetrics
     ) -> CGRect {
-        let origin = clampedOrigin(
-            desired: CGPoint(
-                x: anchor.x - metrics.idlePanelSize.width / 2,
-                y: anchor.y - metrics.mascotAnchorYOffset
-            ),
+        let desired = CGPoint(
+            x: anchor.x - metrics.idlePanelSize.width / 2,
+            y: anchor.y - metrics.mascotAnchorYOffset
+        )
+        let clampedY = clampedOrigin(
+            desired: desired,
             size: metrics.idlePanelSize,
             visibleFrame: visibleFrame,
             margin: metrics.screenMargin
+        ).y
+        let origin = CGPoint(
+            x: edgeClingXOrigin(
+                desiredX: desired.x,
+                size: metrics.idlePanelSize,
+                visibleFrame: visibleFrame,
+                metrics: metrics
+            ),
+            y: clampedY
         )
         return CGRect(origin: origin, size: metrics.idlePanelSize)
+    }
+
+    static func edgeAttachment(
+        for frame: CGRect,
+        visibleFrame: CGRect
+    ) -> DesktopPetEdgeAttachment {
+        if frame.minX < visibleFrame.minX {
+            return .left
+        }
+        if frame.maxX > visibleFrame.maxX {
+            return .right
+        }
+        return .none
     }
 
     static func bubbleLayout(
         for anchor: CGPoint,
         visibleFrame: CGRect,
-        metrics: DesktopPetLayoutMetrics
+        metrics: DesktopPetLayoutMetrics,
+        edgeAttachment: DesktopPetEdgeAttachment = .none
     ) -> DesktopPetPanelLayout {
+        if edgeAttachment.isAttached {
+            return edgeAttachedBubbleLayout(
+                for: anchor,
+                visibleFrame: visibleFrame,
+                metrics: metrics,
+                edgeAttachment: edgeAttachment
+            )
+        }
+
         let verticalOptions = orderedVerticalOptions(
             for: anchor,
             visibleFrame: visibleFrame,
@@ -146,6 +191,43 @@ enum DesktopPetLayout {
             )
         )
         return CGRect(origin: origin, size: size)
+    }
+
+    private static func edgeAttachedBubbleLayout(
+        for anchor: CGPoint,
+        visibleFrame: CGRect,
+        metrics: DesktopPetLayoutMetrics,
+        edgeAttachment: DesktopPetEdgeAttachment
+    ) -> DesktopPetPanelLayout {
+        let horizontal: DesktopPetBubbleHorizontalPlacement = edgeAttachment == .left ? .right : .left
+        let verticalOptions = orderedVerticalOptions(
+            for: anchor,
+            visibleFrame: visibleFrame,
+            metrics: metrics
+        )
+        let placement = DesktopPetBubblePlacement(
+            vertical: verticalOptions.first ?? .above,
+            horizontal: horizontal
+        )
+        let frame = bubbleFrame(
+            for: anchor,
+            placement: placement,
+            metrics: metrics
+        )
+        let clampedY = clampedOrigin(
+            desired: frame.origin,
+            size: frame.size,
+            visibleFrame: visibleFrame,
+            margin: metrics.screenMargin
+        ).y
+
+        return DesktopPetPanelLayout(
+            frame: CGRect(
+                origin: CGPoint(x: frame.origin.x, y: clampedY),
+                size: frame.size
+            ),
+            placement: placement
+        )
     }
 
     private static func mascotAnchorXOffset(
@@ -252,6 +334,32 @@ enum DesktopPetLayout {
             x: clamp(desired.x, min: minX, max: max(maxX, minX)),
             y: clamp(desired.y, min: minY, max: max(maxY, minY))
         )
+    }
+
+    private static func edgeClingXOrigin(
+        desiredX: CGFloat,
+        size: CGSize,
+        visibleFrame: CGRect,
+        metrics: DesktopPetLayoutMetrics
+    ) -> CGFloat {
+        let visibleWidth = min(size.width, max(1, metrics.edgeClingVisibleWidth))
+        let desiredMinX = desiredX
+        let desiredMaxX = desiredX + size.width
+
+        if desiredMinX <= visibleFrame.minX + metrics.edgeSnapThreshold {
+            return visibleFrame.minX - (size.width - visibleWidth)
+        }
+
+        if desiredMaxX >= visibleFrame.maxX - metrics.edgeSnapThreshold {
+            return visibleFrame.maxX - visibleWidth
+        }
+
+        return clampedOrigin(
+            desired: CGPoint(x: desiredX, y: visibleFrame.minY),
+            size: size,
+            visibleFrame: visibleFrame,
+            margin: metrics.screenMargin
+        ).x
     }
 
     private static func clamp(_ value: CGFloat, min minValue: CGFloat, max maxValue: CGFloat) -> CGFloat {

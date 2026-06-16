@@ -14,6 +14,8 @@ ICON_PENDING_SOURCE="${ICON_PENDING_SOURCE:-$ROOT_DIR/Resources/AppIcon-pending-
 ICON_COMPLETED_SOURCE="${ICON_COMPLETED_SOURCE:-$ROOT_DIR/Resources/AppIcon-completed-1024.png}"
 ICON_COMPLETED_GLOW_SOURCE="${ICON_COMPLETED_GLOW_SOURCE:-$ROOT_DIR/Resources/AppIcon-completed-glow-1024.png}"
 DESKTOP_PET_SOURCE="${DESKTOP_PET_SOURCE:-$ROOT_DIR/Resources/DesktopPetSprite.png}"
+DESKTOP_PET_PEEK_LEFT_SOURCE="${DESKTOP_PET_PEEK_LEFT_SOURCE:-$ROOT_DIR/Resources/DesktopPetPeekLeft.png}"
+DESKTOP_PET_PEEK_RIGHT_SOURCE="${DESKTOP_PET_PEEK_RIGHT_SOURCE:-$ROOT_DIR/Resources/DesktopPetPeekRight.png}"
 
 SDK_CANDIDATE="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
 if [[ -d "$SDK_CANDIDATE" ]]; then
@@ -33,6 +35,12 @@ chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
 
 if [[ -f "$DESKTOP_PET_SOURCE" ]]; then
   cp "$DESKTOP_PET_SOURCE" "$APP_DIR/Contents/Resources/DesktopPetSprite.png"
+fi
+if [[ -f "$DESKTOP_PET_PEEK_LEFT_SOURCE" ]]; then
+  cp "$DESKTOP_PET_PEEK_LEFT_SOURCE" "$APP_DIR/Contents/Resources/DesktopPetPeekLeft.png"
+fi
+if [[ -f "$DESKTOP_PET_PEEK_RIGHT_SOURCE" ]]; then
+  cp "$DESKTOP_PET_PEEK_RIGHT_SOURCE" "$APP_DIR/Contents/Resources/DesktopPetPeekRight.png"
 fi
 
 # ECDICT offline dictionary (optional — run scripts/fetch_ecdict.sh once to download).
@@ -197,3 +205,5 @@ echo "Pending icon source: $ICON_PENDING_SOURCE"
 echo "Completed icon source: $ICON_COMPLETED_SOURCE"
 echo "Completed glow source: $ICON_COMPLETED_GLOW_SOURCE"
 echo "Desktop pet source: $DESKTOP_PET_SOURCE"
+echo "Desktop pet left peek source: $DESKTOP_PET_PEEK_LEFT_SOURCE"
+echo "Desktop pet right peek source: $DESKTOP_PET_PEEK_RIGHT_SOURCE"

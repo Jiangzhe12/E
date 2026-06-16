@@ -219,6 +219,13 @@ final class AppModel: ObservableObject {
         self.popoverController.onOpenMainWindow = { [weak self] in
             self?.openMainWindow()
         }
+        self.popoverController.onRequestQuickTranslate = { [weak self] in
+            guard let self else { return }
+            self.popoverController.presentQuickTranslate(model: self, near: self.bestPopoverPosition())
+        }
+        self.popoverController.onRequestClipboardTranslation = { [weak self] in
+            self?.translateSelectionNow()
+        }
         self.popoverController.onRequestDailyWord = { [weak self] in
             self?.showDesktopDailyWordInvite()
         }
@@ -560,7 +567,10 @@ final class AppModel: ObservableObject {
 
     func showNextDailyWord() {
         guard !dailyWordCards.isEmpty else { return }
-        currentDailyWordIndex = (currentDailyWordIndex + 1) % dailyWordCards.count
+        currentDailyWordIndex = DailyWordDeckNavigation.nextIndex(
+            after: currentDailyWordIndex,
+            cardCount: dailyWordCards.count
+        )
     }
 
     func showPreviousDailyWord() {
@@ -601,6 +611,15 @@ final class AppModel: ObservableObject {
         wordCarouselStore.resetReview(word: card.word)
         refreshWordCarouselIfNeeded()
         statusMessage = "重置进度：\(card.word)，明天再复习一次"
+    }
+
+    func markCurrentWordNeedsPractice() {
+        guard let card = currentDailyWordCard else { return }
+        guard !card.isReview, !card.isMastered else { return }
+
+        wordCarouselStore.markNeedsPractice(word: card.word)
+        refreshWordCarouselIfNeeded()
+        statusMessage = "已记录不熟悉：\(card.word)，后续会加强复习"
     }
 
     func unmarkMasteredWord(_ word: String) {
@@ -1032,10 +1051,9 @@ final class AppModel: ObservableObject {
         if card.isReview {
             forgotCurrentWord()
         } else {
-            statusMessage = "稍后再练：\(card.word)"
-            showNextDailyWord()
+            markCurrentWordNeedsPractice()
         }
-        presentDailyWordFeedbackAndAdvance(title: "稍后再练", message: "\(card.word) 会继续留在学习队列")
+        presentDailyWordFeedbackAndAdvance(title: "不熟悉", message: "\(card.word) 已完成今日学习，后续会加强复习")
     }
 
     private func presentDailyWordFeedbackAndAdvance(title: String, message: String) {
@@ -1496,7 +1514,7 @@ final class AppModel: ObservableObject {
 
         // On first launch the SwiftUI WindowGroup may not have materialised a
         // window yet. Retry after a short delay; if it still isn't there, the
-        // user can open it from the menu bar.
+        // user can open it from the desktop pet menu.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             if let window = Self.primaryWindow() {
                 window.makeKeyAndOrderFront(nil)
@@ -1505,8 +1523,8 @@ final class AppModel: ObservableObject {
     }
 
     private static func primaryWindow() -> NSWindow? {
-        // MenuBarExtra popovers are NSWindows too; filter to windows that look
-        // like real document/content windows.
+        // Utility popovers are NSWindows too; filter to windows that look like
+        // real document/content windows.
         for window in NSApp.windows where window.canBecomeMain && window.title == "English Coach" {
             return window
         }

@@ -4,7 +4,7 @@ import SwiftUI
 /// A lightweight floating panel that shows ⌘C⌘C translation results near the
 /// mouse cursor without stealing keyboard focus from the user's current app.
 @MainActor
-final class TranslationPopoverController {
+final class TranslationPopoverController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var autoDismissTimer: Timer?
     private var autoDismissAction: (() -> Void)?
@@ -12,6 +12,8 @@ final class TranslationPopoverController {
     private let desktopPetState = DesktopPetPresentationState()
     private let desktopPetLayoutMetrics = DesktopPetLayoutMetrics()
     private var desktopPetAnchorPoint: NSPoint?
+    private var desktopPetEdgeSnapTask: Task<Void, Never>?
+    private var isApplyingDesktopPetFrame = false
     private let speechService = SpeechService()
 
     private var desktopPetIdlePanelSize: NSSize {
@@ -23,6 +25,8 @@ final class TranslationPopoverController {
     }
 
     var onOpenMainWindow: (() -> Void)?
+    var onRequestQuickTranslate: (() -> Void)?
+    var onRequestClipboardTranslation: (() -> Void)?
     var onRequestDailyWord: (() -> Void)?
     var onRequestLastTranslation: (() -> Void)?
     var onDailyWordComplete: ((DesktopWordCard) -> Void)?
@@ -137,6 +141,14 @@ final class TranslationPopoverController {
         }
     }
 
+    func presentActionMenu() {
+        cancelAutoDismissTimer()
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: nil) {
+            desktopPetState.showActionMenu()
+        }
+    }
+
     func presentDailyWordCompletion(message: String) {
         cancelAutoDismissTimer()
         let panel = ensureDesktopPetPanel()
@@ -188,6 +200,22 @@ final class TranslationPopoverController {
                     self?.onOpenMainWindow?()
                     self?.dismiss()
                 },
+                onQuickTranslate: { [weak self] in
+                    self?.dismiss()
+                    self?.onRequestQuickTranslate?()
+                },
+                onTranslateClipboard: { [weak self] in
+                    self?.onRequestClipboardTranslation?()
+                },
+                onShowDailyWord: { [weak self] in
+                    self?.onRequestDailyWord?()
+                },
+                onShowLastTranslation: { [weak self] in
+                    self?.onRequestLastTranslation?()
+                },
+                onQuitApp: {
+                    NSApp.terminate(nil)
+                },
                 onSpeak: { [weak self] result in
                     let lang = result.direction == .chineseToEnglish ? "zh-CN" : "en-US"
                     self?.speechService.speak(result.originalText, languageCode: lang)
@@ -199,7 +227,7 @@ final class TranslationPopoverController {
                     self?.dismiss()
                 },
                 onPetTap: { [weak self] in
-                    self?.onRequestDailyWord?()
+                    self?.presentActionMenu()
                 },
                 onPetSecondaryTap: { [weak self] in
                     self?.onRequestLastTranslation?()
@@ -242,10 +270,17 @@ final class TranslationPopoverController {
         panel.hasShadow = false
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
+        panel.delegate = self
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = hostingView
         self.panel = panel
         return panel
+    }
+
+    nonisolated func windowDidMove(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.handleDesktopPetWindowDidMove()
+        }
     }
 
     private func positionPanel(_ panel: NSPanel, near mouseLocation: NSPoint) {
@@ -333,10 +368,11 @@ final class TranslationPopoverController {
             let layout = DesktopPetLayout.bubbleLayout(
                 for: anchor,
                 visibleFrame: visible,
-                metrics: desktopPetLayoutMetrics
+                metrics: desktopPetLayoutMetrics,
+                edgeAttachment: desktopPetState.edgeAttachment
             )
             desktopPetState.setBubblePlacement(layout.placement)
-            panel.setFrame(layout.frame, display: true)
+            setDesktopPetFrame(panel, layout.frame, display: true)
             return
         }
 
@@ -345,7 +381,10 @@ final class TranslationPopoverController {
             visibleFrame: visible,
             metrics: desktopPetLayoutMetrics
         )
-        panel.setFrame(frame, display: true)
+        desktopPetState.setEdgeAttachment(
+            DesktopPetLayout.edgeAttachment(for: frame, visibleFrame: visible)
+        )
+        setDesktopPetFrame(panel, frame, display: true)
     }
 
     private func presentDesktopPetBubble(
@@ -373,11 +412,12 @@ final class TranslationPopoverController {
         let layout = DesktopPetLayout.bubbleLayout(
             for: anchor,
             visibleFrame: visible,
-            metrics: desktopPetLayoutMetrics
+            metrics: desktopPetLayoutMetrics,
+            edgeAttachment: desktopPetState.edgeAttachment
         )
 
         panel.disableScreenUpdatesUntilFlush()
-        panel.setFrame(layout.frame, display: false)
+        setDesktopPetFrame(panel, layout.frame, display: false)
         withoutDesktopPetTransitionAnimation {
             desktopPetState.setBubblePlacement(layout.placement)
             updateState()
@@ -392,6 +432,58 @@ final class TranslationPopoverController {
             placement: desktopPetState.bubblePlacement,
             metrics: desktopPetLayoutMetrics
         )
+    }
+
+    private func handleDesktopPetWindowDidMove() {
+        guard
+            let movedPanel = panel,
+            !isApplyingDesktopPetFrame
+        else { return }
+
+        syncDesktopPetAnchor(from: movedPanel)
+
+        guard !desktopPetState.hasBubble else { return }
+        scheduleDesktopPetEdgeSnap(for: movedPanel)
+    }
+
+    private func scheduleDesktopPetEdgeSnap(for panel: NSPanel) {
+        desktopPetEdgeSnapTask?.cancel()
+        desktopPetEdgeSnapTask = Task { @MainActor [weak self, weak panel] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard
+                !Task.isCancelled,
+                let self,
+                let panel
+            else { return }
+            self.applyDesktopPetEdgeSnap(to: panel)
+        }
+    }
+
+    private func applyDesktopPetEdgeSnap(to panel: NSPanel) {
+        guard !desktopPetState.hasBubble else { return }
+        guard NSEvent.pressedMouseButtons == 0 else {
+            scheduleDesktopPetEdgeSnap(for: panel)
+            return
+        }
+
+        let screen = NSScreen.screens.first(where: { $0.frame.intersects(panel.frame) })
+            ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+
+        syncDesktopPetAnchor(from: panel)
+        guard let anchor = desktopPetAnchorPoint else { return }
+        applyDesktopPetFrame(
+            panel,
+            size: desktopPetIdlePanelSize,
+            anchor: anchor,
+            visibleFrame: visible
+        )
+    }
+
+    private func setDesktopPetFrame(_ panel: NSPanel, _ frame: NSRect, display: Bool) {
+        isApplyingDesktopPetFrame = true
+        panel.setFrame(frame, display: display)
+        isApplyingDesktopPetFrame = false
     }
 
     private func defaultDesktopPetAnchor(in visible: NSRect, margin: CGFloat) -> NSPoint {

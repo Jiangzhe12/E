@@ -53,4 +53,39 @@ expect(expanded.dailyTarget == 6, "starting the next group should add one more q
 expect(!expanded.hasCompletedDailyTarget, "expanded target should reopen daily learning")
 expect(expanded.todayWords.count == 3, "expanded target should fill the next group")
 
+let reinforcementSuiteName = "EnglishCoach.WordCarouselStoreTests.reinforcement.\(UUID().uuidString)"
+guard let reinforcementDefaults = UserDefaults(suiteName: reinforcementSuiteName) else {
+    fatalError("failed to create isolated reinforcement defaults suite")
+}
+defer {
+    reinforcementDefaults.removePersistentDomain(forName: reinforcementSuiteName)
+}
+
+var reinforcementDate = fixedDate
+let reinforcementStore = WordCarouselStore(
+    defaults: reinforcementDefaults,
+    coreWords: words,
+    extendedWords: [],
+    dailyQuota: 3,
+    dateProvider: { reinforcementDate },
+    calendar: Calendar(identifier: .gregorian),
+    stateKey: "reinforcement.state"
+)
+let reinforcementInitial = reinforcementStore.snapshot()
+let unfamiliarWord = reinforcementInitial.todayWords[0]
+
+reinforcementStore.markNeedsPractice(word: unfamiliarWord)
+let afterUnfamiliar = reinforcementStore.snapshot()
+
+expect(!afterUnfamiliar.todayWords.contains(unfamiliarWord), "unfamiliar word should leave today's active deck")
+expect(afterUnfamiliar.todayMasteredCount == 1, "unfamiliar word should count as completed for today's quota")
+expect(!afterUnfamiliar.masteredWords.contains(unfamiliarWord), "unfamiliar word should not be treated as mastered")
+expect(!afterUnfamiliar.masteredRecords.contains { $0.word == unfamiliarWord }, "unfamiliar word should not appear in mastered records")
+expect(afterUnfamiliar.totalMasteredCount == 0, "unfamiliar word should not increase total mastered count")
+
+reinforcementDate = reinforcementDate.addingTimeInterval(86_400)
+let tomorrowReinforcement = reinforcementStore.snapshot()
+expect(tomorrowReinforcement.reviewDueWords.contains(unfamiliarWord), "unfamiliar word should come back for focused review later")
+expect(!tomorrowReinforcement.todayWords.contains(unfamiliarWord), "unfamiliar word should not be redrawn as a fresh word before review")
+
 print("WordCarouselStoreTests passed")
