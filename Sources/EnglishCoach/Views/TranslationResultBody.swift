@@ -36,6 +36,7 @@ struct TranslationResultBody<Trailing: View>: View {
     let phonetic: String?
     let explanations: [String]
     var originalLineLimit: Int? = 1
+    var phoneticLineLimit: Int? = 1
     let style: TranslationResultStyle
     @ViewBuilder var originalTrailing: () -> Trailing
 
@@ -59,7 +60,7 @@ struct TranslationResultBody<Trailing: View>: View {
                 Text(phonetic)
                     .font(.caption.monospaced())
                     .foregroundStyle(style.phonetic)
-                    .lineLimit(1)
+                    .lineLimit(phoneticLineLimit)
             }
 
             if !explanations.isEmpty {
@@ -83,6 +84,7 @@ extension TranslationResultBody where Trailing == EmptyView {
         phonetic: String?,
         explanations: [String],
         originalLineLimit: Int? = 1,
+        phoneticLineLimit: Int? = 1,
         style: TranslationResultStyle
     ) {
         self.init(
@@ -91,6 +93,7 @@ extension TranslationResultBody where Trailing == EmptyView {
             phonetic: phonetic,
             explanations: explanations,
             originalLineLimit: originalLineLimit,
+            phoneticLineLimit: phoneticLineLimit,
             style: style,
             originalTrailing: { EmptyView() }
         )

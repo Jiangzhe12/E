@@ -700,6 +700,7 @@ struct QuickTranslatePopoverView: View {
                         phonetic: result.phonetic,
                         explanations: Array(result.explanations.prefix(3)),
                         originalLineLimit: 2,
+                        phoneticLineLimit: nil,
                         style: .panel
                     ) {
                         Spacer(minLength: 4)
