@@ -1,32 +1,14 @@
 import SwiftUI
 
-/// Search + category + status filters for the todo list. Expanded with
-/// priority-sort and tag pills in a later phase.
+/// Collapsible filter chips (category / status / tags) for the todo list.
+/// Search and priority-sort live in the list view's control row.
 struct TodoFilterBar: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索待办（标题 / 备注）", text: $model.todoSearchQuery)
-                    .textFieldStyle(.plain)
-                if !model.todoSearchQuery.isEmpty {
-                    Button { model.todoSearchQuery = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(0.7))
-            )
-
-            HStack(spacing: 6) {
+                Text("分类").font(.caption2).foregroundStyle(.tertiary).frame(width: 30, alignment: .leading)
                 TodoPill(title: "全部", isActive: model.todoFilterCategory == nil) {
                     model.todoFilterCategory = nil
                 }
@@ -42,7 +24,8 @@ struct TodoFilterBar: View {
             }
 
             HStack(spacing: 6) {
-                TodoPill(title: "全部状态", isActive: model.todoFilterStatus == nil) {
+                Text("状态").font(.caption2).foregroundStyle(.tertiary).frame(width: 30, alignment: .leading)
+                TodoPill(title: "全部", isActive: model.todoFilterStatus == nil) {
                     model.todoFilterStatus = nil
                 }
                 ForEach(TodoStatus.allCases) { status in
@@ -54,25 +37,11 @@ struct TodoFilterBar: View {
                         model.todoFilterStatus = model.todoFilterStatus == status ? nil : status
                     }
                 }
-
-                Spacer(minLength: 0)
-
-                Button {
-                    model.todoSortByPriority.toggle()
-                } label: {
-                    Label("优先级", systemImage: model.todoSortByPriority ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(model.todoSortByPriority ? TodoPalette.title : .secondary)
-                .help("按优先级排序")
             }
 
             if !model.customTags.isEmpty {
                 HStack(spacing: 6) {
-                    Image(systemName: "tag")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Text("标签").font(.caption2).foregroundStyle(.tertiary).frame(width: 30, alignment: .leading)
                     ForEach(model.customTags, id: \.self) { tag in
                         TodoPill(
                             title: "#\(tag)",

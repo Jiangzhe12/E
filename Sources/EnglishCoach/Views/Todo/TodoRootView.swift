@@ -3,7 +3,6 @@ import SwiftUI
 enum TodoSubview: String, CaseIterable, Identifiable {
     case list
     case calendar
-    case stats
     case report
     case templates
     case memo
@@ -13,7 +12,6 @@ enum TodoSubview: String, CaseIterable, Identifiable {
         switch self {
         case .list: return "列表"
         case .calendar: return "日历"
-        case .stats: return "统计"
         case .report: return "周报"
         case .templates: return "模板"
         case .memo: return "便签"
@@ -31,9 +29,17 @@ struct TodoRootView: View {
     @State private var quickAddTitle: String = ""
     @State private var isShowingAddForm: Bool = false
     @State private var isShowingArchive: Bool = false
+    @State private var isShowingFilters: Bool = false
     @State private var editingTodo: TodoItem?
 
     private var today: String { todoDayKey(for: Date()) }
+
+    /// Count of active (non-default) filters, shown as a badge on 筛选.
+    private var activeFilterCount: Int {
+        (model.todoFilterCategory != nil ? 1 : 0)
+            + (model.todoFilterStatus != nil ? 1 : 0)
+            + (model.todoFilterTag.isEmpty ? 0 : 1)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -49,8 +55,6 @@ struct TodoRootView: View {
                 listSubview
             case .calendar:
                 TodoCalendarView(model: model) { editingTodo = $0 }
-            case .stats:
-                TodoStatsView(model: model)
             case .report:
                 WeeklyReportView(model: model)
             case .templates:
@@ -114,8 +118,16 @@ struct TodoRootView: View {
         if let deleted = model.deletedTodo {
             undoBanner(deleted)
         }
-        TodoStatsView(model: model, compact: true)
-        TodoFilterBar(model: model)
+        controlRow
+        if isShowingFilters {
+            TodoFilterBar(model: model)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.55))
+                )
+        }
+        summaryStrip
         listContent
     }
 
@@ -129,6 +141,78 @@ struct TodoRootView: View {
                 .controlSize(.small)
                 .disabled(quickAddTitle.trimmed.isEmpty)
         }
+    }
+
+    /// Search + collapsible-filter toggle + priority sort, on one compact line.
+    private var controlRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("搜索标题 / 备注", text: $model.todoSearchQuery)
+                    .textFieldStyle(.plain)
+                if !model.todoSearchQuery.isEmpty {
+                    Button { model.todoSearchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.7)))
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { isShowingFilters.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                    Text("筛选")
+                    if activeFilterCount > 0 {
+                        Text("\(activeFilterCount)")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(TodoPalette.title))
+                    }
+                }
+                .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(isShowingFilters || activeFilterCount > 0 ? TodoPalette.title : .secondary)
+
+            Button {
+                model.todoSortByPriority.toggle()
+            } label: {
+                Image(systemName: model.todoSortByPriority ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(model.todoSortByPriority ? TodoPalette.title : .secondary)
+            .help("按优先级排序")
+        }
+    }
+
+    /// Slim one-line summary replacing the four large stat blocks.
+    private var summaryStrip: some View {
+        let stats = model.todoStats
+        return HStack(spacing: 10) {
+            Text("今日 ")
+                .font(.caption).foregroundStyle(.secondary)
+            + Text("\(stats.todayDone)/\(stats.todayTotal)")
+                .font(.caption.weight(.semibold)).foregroundStyle(TodoPalette.title)
+            + Text(" 完成").font(.caption).foregroundStyle(.secondary)
+
+            ProgressView(value: Double(stats.todayDone), total: Double(max(stats.todayTotal, 1)))
+                .frame(maxWidth: 150)
+                .tint(TodoPalette.status(.done))
+
+            Spacer()
+
+            Text("进行中 \(stats.inProgress) · 待办 \(stats.pending) · 逾期 \(stats.overdue)")
+                .font(.caption2)
+                .foregroundStyle(stats.overdue > 0 ? TodoPalette.orange : .secondary)
+        }
+        .padding(.horizontal, 2)
     }
 
     private func submitQuickAdd() {
@@ -177,19 +261,31 @@ struct TodoRootView: View {
             )
         } else {
             ForEach(groups) { group in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
                         Text(todoGroupHeader(for: group.date, today: today))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Color(red: 0.27, green: 0.40, blue: 0.55))
-                        Text("\(group.todos.filter { $0.status != .done }.count) 项")
+                        Text("\(group.todos.count) 项")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Spacer()
                     }
-                    ForEach(group.todos) { todo in
-                        TodoRowView(model: model, todo: todo, today: today) { editingTodo = $0 }
+                    // Merge a date group's rows into one container with hairline
+                    // dividers so it reads as a single list, not floating cards.
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.todos.enumerated()), id: \.element.id) { index, todo in
+                            if index > 0 {
+                                Divider().opacity(0.5).padding(.leading, 38)
+                            }
+                            TodoRowView(model: model, todo: todo, today: today) { editingTodo = $0 }
+                        }
                     }
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.80))
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }
         }
