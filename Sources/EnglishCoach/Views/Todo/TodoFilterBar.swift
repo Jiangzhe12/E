@@ -54,6 +54,35 @@ struct TodoFilterBar: View {
                         model.todoFilterStatus = model.todoFilterStatus == status ? nil : status
                     }
                 }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    model.todoSortByPriority.toggle()
+                } label: {
+                    Label("优先级", systemImage: model.todoSortByPriority ? "arrow.up.arrow.down.circle.fill" : "arrow.up.arrow.down.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(model.todoSortByPriority ? TodoPalette.title : .secondary)
+                .help("按优先级排序")
+            }
+
+            if !model.customTags.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "tag")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    ForEach(model.customTags, id: \.self) { tag in
+                        TodoPill(
+                            title: "#\(tag)",
+                            color: Color(red: 0.40, green: 0.45, blue: 0.60),
+                            isActive: model.todoFilterTag == tag
+                        ) {
+                            model.todoFilterTag = model.todoFilterTag == tag ? "" : tag
+                        }
+                    }
+                }
             }
         }
     }

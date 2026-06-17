@@ -2200,6 +2200,7 @@ extension AppModel {
         } catch {
             statusMessage = "待办数据加载失败：\(error.localizedDescription)"
         }
+        rescheduleAllTodoReminders()
     }
 
     /// Re-runs carry-over if the day rolled over since the app was last active.
@@ -2295,6 +2296,7 @@ extension AppModel {
 
         persistTodos(toPersist)
         refreshTodos()
+        syncTodoReminder(for: item)
         statusMessage = "已添加待办：\(trimmedTitle)"
     }
 
@@ -2331,6 +2333,7 @@ extension AppModel {
 
         persistTodo(new)
         refreshTodos()
+        syncTodoReminder(for: new)
     }
 
     func toggleTodoStatus(id: String) {
@@ -2347,6 +2350,7 @@ extension AppModel {
         } catch {
             statusMessage = "删除待办失败：\(error.localizedDescription)"
         }
+        reminderScheduler.cancelTodoReminder(id: id)
         refreshTodos()
 
         // Auto-clear the undo affordance after the window passes.
@@ -2445,5 +2449,141 @@ extension AppModel {
     func openTodoListFromPet() {
         shouldFocusTodoTab = true
         openMainWindow()
+    }
+
+    // MARK: Subtasks
+
+    func addSubtask(todoId: String, title: String) {
+        let trimmed = title.trimmed
+        guard !trimmed.isEmpty else { return }
+        updateTodo(id: todoId) {
+            $0.subtasks = ($0.subtasks ?? []) + [Subtask(id: UUID().uuidString, title: trimmed, done: false)]
+        }
+    }
+
+    func toggleSubtask(todoId: String, subtaskId: String) {
+        updateTodo(id: todoId) { item in
+            if let index = item.subtasks?.firstIndex(where: { $0.id == subtaskId }) {
+                item.subtasks?[index].done.toggle()
+            }
+        }
+    }
+
+    func removeSubtask(todoId: String, subtaskId: String) {
+        updateTodo(id: todoId) { $0.subtasks?.removeAll { $0.id == subtaskId } }
+    }
+
+    // MARK: Archive
+
+    func archiveTodo(id: String) {
+        updateTodo(id: id) { $0.archived = true }
+        reminderScheduler.cancelTodoReminder(id: id)
+    }
+
+    func unarchiveTodo(id: String) {
+        updateTodo(id: id) { $0.archived = false }
+    }
+
+    func archiveDoneTodos() {
+        let now = Date()
+        var toPersist: [TodoItem] = []
+        for todo in todos where todo.status == .done && !todo.archived {
+            var archived = todo
+            archived.archived = true
+            archived.updatedAt = now
+            toPersist.append(archived)
+        }
+        guard !toPersist.isEmpty else { return }
+        persistTodos(toPersist)
+        refreshTodos()
+        statusMessage = "已归档 \(toPersist.count) 项已完成待办"
+    }
+
+    var archivedTodos: [TodoItem] {
+        todos.filter(\.archived).sorted { $0.date > $1.date }
+    }
+
+    // MARK: Reorder
+
+    /// Move a todo one slot up/down within its date group (by `order`).
+    func moveTodo(id: String, in dateGroup: String, up: Bool) {
+        let group = todos
+            .filter { $0.date == dateGroup && !$0.archived }
+            .sorted { $0.order < $1.order }
+        guard let index = group.firstIndex(where: { $0.id == id }) else { return }
+        let target = up ? index - 1 : index + 1
+        guard group.indices.contains(target) else { return }
+        var ids = group.map(\.id)
+        ids.swapAt(index, target)
+        reorderTodos(dateGroup: dateGroup, orderedIds: ids)
+    }
+
+    func reorderTodos(dateGroup: String, orderedIds: [String]) {
+        let now = Date()
+        var toPersist: [TodoItem] = []
+        for (index, id) in orderedIds.enumerated() {
+            if let position = todos.firstIndex(where: { $0.id == id && $0.date == dateGroup }) {
+                var todo = todos[position]
+                if todo.order != index {
+                    todo.order = index
+                    todo.updatedAt = now
+                    toPersist.append(todo)
+                }
+            }
+        }
+        guard !toPersist.isEmpty else { return }
+        persistTodos(toPersist)
+        refreshTodos()
+    }
+
+    // MARK: Tags
+
+    func addCustomTag(_ name: String) {
+        let trimmed = name.trimmed
+        guard !trimmed.isEmpty, !customTags.contains(trimmed) else { return }
+        customTags.append(trimmed)
+        try? todoStore?.saveCustomTags(customTags)
+    }
+
+    func removeCustomTag(_ name: String) {
+        customTags.removeAll { $0 == name }
+        try? todoStore?.saveCustomTags(customTags)
+    }
+
+    func setTags(todoId: String, tags: [String]) {
+        let cleaned = tags.map { $0.trimmed }.filter { !$0.isEmpty }
+        updateTodo(id: todoId) { $0.tags = cleaned.isEmpty ? nil : cleaned }
+        for tag in cleaned where !customTags.contains(tag) {
+            addCustomTag(tag)
+        }
+    }
+
+    // MARK: Reminders
+
+    /// Schedule or cancel the due reminder for one todo, based on its state.
+    private func syncTodoReminder(for todo: TodoItem) {
+        guard let due = todo.dueDate, !due.isEmpty, todo.status != .done, !todo.archived else {
+            reminderScheduler.cancelTodoReminder(id: todo.id)
+            return
+        }
+        Task {
+            if await reminderScheduler.requestAuthorizationIfNeeded() {
+                reminderScheduler.scheduleTodoReminder(id: todo.id, title: todo.title, dueDateKey: due)
+            }
+        }
+    }
+
+    /// Re-arm reminders for all open, future-dated todos (covers app restarts).
+    func rescheduleAllTodoReminders() {
+        let due = todos.filter { !$0.archived && $0.status != .done && ($0.dueDate?.isEmpty == false) }
+        guard !due.isEmpty else { return }
+        Task {
+            guard await reminderScheduler.requestAuthorizationIfNeeded() else { return }
+            for todo in due {
+                if let key = todo.dueDate {
+                    reminderScheduler.scheduleTodoReminder(id: todo.id, title: todo.title, dueDateKey: key)
+                }
+            }
+        }
     }
 }

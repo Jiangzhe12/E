@@ -8,6 +8,7 @@ struct TodoRootView: View {
 
     @State private var quickAddTitle: String = ""
     @State private var isShowingAddForm: Bool = false
+    @State private var isShowingArchive: Bool = false
     @State private var editingTodo: TodoItem?
 
     private var today: String { todoDayKey(for: Date()) }
@@ -38,6 +39,9 @@ struct TodoRootView: View {
         .sheet(item: $editingTodo) { todo in
             TodoFormView(model: model, editing: todo) { editingTodo = nil }
         }
+        .sheet(isPresented: $isShowingArchive) {
+            TodoArchiveView(model: model) { isShowingArchive = false }
+        }
     }
 
     private var header: some View {
@@ -49,6 +53,15 @@ struct TodoRootView: View {
             Text("\(model.openTodoCount) 项待完成")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+            Menu {
+                Button("归档已完成") { model.archiveDoneTodos() }
+                Button("查看归档（\(model.archivedTodos.count)）") { isShowingArchive = true }
+            } label: {
+                Image(systemName: "archivebox")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("归档")
             Button {
                 isShowingAddForm = true
             } label: {

@@ -16,6 +16,8 @@ struct TodoFormView: View {
     @State private var note: String
     @State private var bugCause: String
     @State private var fixPlan: String
+    @State private var tags: [String]
+    @State private var tagInput: String = ""
 
     init(model: AppModel, editing: TodoItem?, onClose: @escaping () -> Void) {
         self.model = model
@@ -29,6 +31,7 @@ struct TodoFormView: View {
         _note = State(initialValue: editing?.note ?? "")
         _bugCause = State(initialValue: editing?.bugCause ?? "")
         _fixPlan = State(initialValue: editing?.fixPlan ?? "")
+        _tags = State(initialValue: editing?.tags ?? [])
     }
 
     private var canSave: Bool { !title.trimmed.isEmpty }
@@ -81,6 +84,39 @@ struct TodoFormView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
+                Text("标签").font(.caption).foregroundStyle(.secondary)
+                if !tags.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(tags, id: \.self) { tag in
+                            HStack(spacing: 3) {
+                                Text("#\(tag)").font(.caption)
+                                Button { tags.removeAll { $0 == tag } } label: {
+                                    Image(systemName: "xmark").font(.system(size: 8))
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color(red: 0.90, green: 0.92, blue: 0.97)))
+                        }
+                    }
+                }
+                TextField("输入标签后回车", text: $tagInput)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addTag)
+                if !model.customTags.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(model.customTags.filter { !tags.contains($0) }.prefix(6), id: \.self) { tag in
+                            Button("#\(tag)") { tags.append(tag) }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text("备注（支持 Markdown）").font(.caption).foregroundStyle(.secondary)
                 TextEditor(text: $note)
                     .font(.body)
@@ -105,11 +141,20 @@ struct TodoFormView: View {
         .frame(width: 420)
     }
 
+    private func addTag() {
+        let trimmed = tagInput.trimmed
+        guard !trimmed.isEmpty, !tags.contains(trimmed) else { tagInput = ""; return }
+        tags.append(trimmed)
+        tagInput = ""
+    }
+
     private func save() {
+        addTag()  // fold any pending input into the tag list
         let dueKey = hasDueDate ? todoDayKey(for: dueDate) : nil
         let trimmedCause = bugCause.trimmed
         let trimmedFix = fixPlan.trimmed
         let trimmedNote = note.trimmed
+        let finalTags = tags.isEmpty ? nil : tags
 
         if let editing {
             model.updateTodo(id: editing.id) { item in
@@ -118,6 +163,7 @@ struct TodoFormView: View {
                 item.priority = priority
                 item.dueDate = dueKey
                 item.note = trimmedNote.isEmpty ? nil : trimmedNote
+                item.tags = finalTags
                 if category == .bug {
                     item.bugCause = trimmedCause.isEmpty ? nil : trimmedCause
                     item.fixPlan = trimmedFix.isEmpty ? nil : trimmedFix
@@ -130,10 +176,12 @@ struct TodoFormView: View {
                 priority: priority,
                 dueDate: dueKey,
                 note: trimmedNote.isEmpty ? nil : trimmedNote,
+                tags: finalTags,
                 bugCause: category == .bug && !trimmedCause.isEmpty ? trimmedCause : nil,
                 fixPlan: category == .bug && !trimmedFix.isEmpty ? trimmedFix : nil
             )
         }
+        for tag in tags { model.addCustomTag(tag) }
         onClose()
     }
 

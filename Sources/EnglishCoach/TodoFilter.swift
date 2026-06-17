@@ -25,7 +25,7 @@ enum TodoFilter {
         tag: String = "",
         sortByPriority: Bool = false
     ) -> [TodoDateGroup] {
-        let query = search.trimmed.lowercased()
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         let filtered = todos.filter { todo in
             if todo.archived { return false }

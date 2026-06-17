@@ -60,6 +60,49 @@ final class ReminderScheduler {
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
     }
 
+    // MARK: - Per-todo due reminders
+
+    /// Schedule a one-shot reminder at 09:00 on the todo's due day. The
+    /// `todo-<id>` identifier namespace can't collide with `daily-reminder`.
+    /// No-op (and clears any prior reminder) if the fire time is already past.
+    func scheduleTodoReminder(
+        id: String,
+        title: String,
+        dueDateKey: String,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        let reminderID = "todo-\(id)"
+        center.removePendingNotificationRequests(withIdentifiers: [reminderID])
+
+        let parts = dueDateKey.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return }
+        var components = DateComponents()
+        components.year = parts[0]
+        components.month = parts[1]
+        components.day = parts[2]
+        components.hour = 9
+        components.minute = 0
+        guard let fireDate = calendar.date(from: components), fireDate > now else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "待办到期"
+        content.body = title
+        content.sound = .default
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let request = UNNotificationRequest(identifier: reminderID, content: content, trigger: trigger)
+        center.add(request) { error in
+            if let error {
+                NSLog("[ReminderScheduler] todo schedule failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    func cancelTodoReminder(id: String) {
+        center.removePendingNotificationRequests(withIdentifiers: ["todo-\(id)"])
+    }
+
     /// Skip today's firing without losing future days. If the reminder time is
     /// still in the future today, we remove the pending request and schedule a
     /// single-shot request for tomorrow at the same time; a later call to
