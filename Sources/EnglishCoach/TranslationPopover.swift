@@ -97,7 +97,7 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         quickTranslatePanel?.orderOut(nil)
     }
 
-    // MARK: - Quick Add Todo panel (pet right-click)
+    // MARK: - Add Todo panel (pet right-click) — same form as 详细新建
 
     func presentQuickAddTodo(model: AppModel, near point: NSPoint) {
         if let existing = quickAddTodoPanel, existing.isVisible {
@@ -108,21 +108,18 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         }
 
         let hostingView = NSHostingView(
-            rootView: QuickAddTodoPopoverView(
+            rootView: TodoFormView(
                 model: model,
-                onClose: { [weak self] in
-                    self?.dismissQuickAddTodo()
-                },
-                onOpenMainWindow: { [weak self] in
-                    self?.onRequestOpenTodoList?()
-                    self?.dismissQuickAddTodo()
-                }
+                editing: nil,
+                onClose: { [weak self] in self?.dismissQuickAddTodo() }
             )
         )
+        let fitting = hostingView.fittingSize
+        let contentSize = NSSize(width: max(fitting.width, quickPanelWidth), height: max(fitting.height, 360))
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: quickPanelWidth, height: 160),
-            styleMask: [.titled, .closable, .fullSizeContentView, .utilityWindow],
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .utilityWindow],
             backing: .buffered,
             defer: false
         )
@@ -136,7 +133,7 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.minSize = NSSize(width: 360, height: 150)
+        panel.minSize = NSSize(width: 420, height: 320)
         panel.contentView = hostingView
 
         positionPanel(panel, near: point)
@@ -805,82 +802,5 @@ struct QuickTranslatePopoverView: View {
                 translationResult = result
             }
         }
-    }
-}
-
-/// Small input panel for jotting a todo from the desktop pet (right-click).
-/// Type a title, pick a category, press Return to add. Stays open so several
-/// items can be captured in a row; Esc closes.
-struct QuickAddTodoPopoverView: View {
-    @ObservedObject var model: AppModel
-    let onClose: () -> Void
-    let onOpenMainWindow: () -> Void
-
-    @State private var title: String = ""
-    @State private var category: TodoCategory = .feature
-    @State private var lastAdded: String?
-    @FocusState private var isInputFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "checklist")
-                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
-                Text("快速记待办")
-                    .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
-                Spacer()
-                Button { onOpenMainWindow() } label: {
-                    Label("打开列表", systemImage: "macwindow")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-            }
-
-            TextField("记一条待办，回车添加…", text: $title)
-                .textFieldStyle(.roundedBorder)
-                .focused($isInputFocused)
-                .onAppear { isInputFocused = true }
-                .onSubmit(add)
-
-            HStack {
-                Picker("", selection: $category) {
-                    ForEach(TodoCategory.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 240)
-                Spacer()
-                Button("添加", action: add)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(title.trimmed.isEmpty)
-            }
-
-            HStack {
-                if let lastAdded {
-                    Text("已添加：\(lastAdded)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                Text("回车添加 · Esc 关闭")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(16)
-        .frame(width: 420)
-        .onExitCommand(perform: onClose)
-    }
-
-    private func add() {
-        let trimmed = title.trimmed
-        guard !trimmed.isEmpty else { return }
-        model.addTodo(title: trimmed, category: category)
-        lastAdded = trimmed
-        title = ""
-        isInputFocused = true
     }
 }
