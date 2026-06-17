@@ -122,4 +122,5 @@ swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.
 swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoFilter.swift Tests/TodoFilterSortTests/main.swift -o /tmp/TodoFilterSortTests && /tmp/TodoFilterSortTests
 swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoStats.swift Tests/TodoStatsTests/main.swift -o /tmp/TodoStatsTests && /tmp/TodoStatsTests
 swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/WeeklyReport.swift Tests/WeeklyReportTests/main.swift -o /tmp/WeeklyReportTests && /tmp/WeeklyReportTests
+swiftc Sources/EnglishCoach/TodoModels.swift Tests/TodoTemplateTests/main.swift -o /tmp/TodoTemplateTests && /tmp/TodoTemplateTests
 ```

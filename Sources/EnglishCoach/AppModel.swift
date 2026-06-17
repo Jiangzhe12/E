@@ -120,6 +120,8 @@ final class AppModel: ObservableObject {
     private let todoStore: TodoStore?
     /// Pending hard-delete of a todo, cancelable within the undo window.
     private var todoUndoWorkItem: DispatchWorkItem?
+    /// Debounced memo autosave.
+    private var todoMemoSaveWork: DispatchWorkItem?
     private let defaults: UserDefaults
     private let wordCarouselStore: WordCarouselStore
     private let masteredWordDictionary = ECDICTDictionary()
@@ -2598,6 +2600,71 @@ extension AppModel {
         for tag in cleaned where !customTags.contains(tag) {
             addCustomTag(tag)
         }
+    }
+
+    // MARK: Templates
+
+    func addTemplate(
+        name: String,
+        category: TodoCategory,
+        priority: TodoPriority,
+        tags: [String],
+        subtasks: [String],
+        note: String
+    ) {
+        let trimmedName = name.trimmed
+        guard !trimmedName.isEmpty else { return }
+        let template = TodoTemplate(
+            id: UUID().uuidString,
+            name: trimmedName,
+            category: category,
+            priority: priority,
+            tags: tags.isEmpty ? nil : tags,
+            subtasks: subtasks.isEmpty ? nil : subtasks,
+            note: note.trimmed.isEmpty ? nil : note
+        )
+        templates.append(template)
+        try? todoStore?.saveTemplates(templates)
+    }
+
+    func deleteTemplate(id: String) {
+        templates.removeAll { $0.id == id }
+        try? todoStore?.saveTemplates(templates)
+    }
+
+    func createTodoFromTemplate(id: String) {
+        guard let template = templates.first(where: { $0.id == id }) else { return }
+        let now = Date()
+        let today = todoTodayKey()
+
+        var toPersist: [TodoItem] = []
+        for todo in todos where todo.date == today && !todo.archived {
+            var bumped = todo
+            bumped.order += 1
+            toPersist.append(bumped)
+        }
+        let item = makeTodoFromTemplate(template, date: today, now: now)
+        toPersist.append(item)
+
+        persistTodos(toPersist)
+        refreshTodos()
+        statusMessage = "已从模板创建：\(template.name)"
+    }
+
+    // MARK: Memo
+
+    func setTodoMemo(_ text: String) {
+        todoMemo = text
+        let now = Date()
+        todoMemoUpdatedAt = now
+        todoMemoSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            try? self.todoStore?.saveMemo(self.todoMemo, updatedAt: now)
+            self.todoMemoSaveWork = nil
+        }
+        todoMemoSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     // MARK: Weekly report

@@ -171,6 +171,40 @@ func todoDayKey(for date: Date, calendar: Calendar = .current) -> String {
     )
 }
 
+/// Materialise a todo from a template: the template's subtask titles become
+/// fresh `Subtask` values; attachments are intentionally dropped. Pure so it can
+/// be unit-tested.
+func makeTodoFromTemplate(
+    _ template: TodoTemplate,
+    todoId: String = UUID().uuidString,
+    date: String,
+    now: Date = Date()
+) -> TodoItem {
+    let subtasks = template.subtasks?.map { Subtask(id: UUID().uuidString, title: $0, done: false) }
+    return TodoItem(
+        id: todoId,
+        title: template.name,
+        category: template.category,
+        priority: template.priority,
+        status: .pending,
+        date: date,
+        createdAt: now,
+        updatedAt: now,
+        completedAt: nil,
+        order: 0,
+        archived: false,
+        dueDate: nil,
+        note: template.note,
+        tags: template.tags,
+        subtasks: subtasks,
+        attachments: nil,
+        changelog: nil,
+        bugCause: nil,
+        fixPlan: nil,
+        convertedToOptimizationId: nil
+    )
+}
+
 /// How a due date relates to today, used for label text + color.
 enum TodoDueKind {
     case overdue
