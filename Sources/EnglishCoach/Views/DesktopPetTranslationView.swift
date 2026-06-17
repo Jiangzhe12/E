@@ -449,6 +449,13 @@ private enum DesktopPetBubbleTailPosition {
     case bottom
 }
 
+private struct BubbleBodyHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private struct DesktopPetTranslationBubbleView: View {
     let content: DesktopPetBubbleContent
     let result: TranslationResult
@@ -470,6 +477,11 @@ private struct DesktopPetTranslationBubbleView: View {
                 CharacterSet.letters.contains($0) || $0 == "-" || $0 == "'"
             }
     }
+
+    /// Natural height of the scrollable translation body; lets the bubble shrink-to-fit
+    /// for short results and scroll (capped) for long ones.
+    @State private var measuredContentHeight: CGFloat = 0
+    private let maxScrollHeight: CGFloat = 188
 
     var body: some View {
         DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
@@ -496,35 +508,47 @@ private struct DesktopPetTranslationBubbleView: View {
                     .bubbleClickableHover()
                 }
 
-                Text(content.originalText)
-                    .font(.caption)
-                    .foregroundStyle(PetPalette.subtitle)
-                    .lineLimit(1)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(content.originalText)
+                            .font(.caption)
+                            .foregroundStyle(PetPalette.subtitle)
+                            .lineLimit(1)
 
-                Text(content.translatedText)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(PetPalette.ink)
-                    .lineLimit(6)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                        Text(content.translatedText)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(PetPalette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
 
-                if let phonetic = content.phonetic {
-                    Text(phonetic)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(PetPalette.violet)
-                        .lineLimit(1)
-                }
+                        if let phonetic = content.phonetic {
+                            Text(phonetic)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(PetPalette.violet)
+                                .lineLimit(1)
+                        }
 
-                if !content.explanationBullets.isEmpty {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(content.explanationBullets.enumerated()), id: \.offset) { _, explanation in
-                            Text("· \(explanation)")
-                                .font(.caption)
-                                .foregroundStyle(PetPalette.bullet)
-                                .lineLimit(3)
+                        if !content.explanationBullets.isEmpty {
+                            VStack(alignment: .leading, spacing: 3) {
+                                ForEach(Array(content.explanationBullets.enumerated()), id: \.offset) { _, explanation in
+                                    Text("· \(explanation)")
+                                        .font(.caption)
+                                        .foregroundStyle(PetPalette.bullet)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: BubbleBodyHeightKey.self, value: geo.size.height)
+                        }
+                    )
                 }
+                .frame(height: min(measuredContentHeight, maxScrollHeight))
+                .scrollBounceBehavior(.basedOnSize)
+                .onPreferenceChange(BubbleBodyHeightKey.self) { measuredContentHeight = $0 }
 
                 HStack(spacing: 8) {
                     DesktopPetCompactButton(
