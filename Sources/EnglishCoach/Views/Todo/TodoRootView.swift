@@ -1,11 +1,27 @@
 import SwiftUI
 
-/// The 待办 tab's content: header + quick-add, filter bar, date-grouped list,
-/// and an undo affordance. Calendar / templates / memo / weekly-report subviews
-/// arrive in later phases.
+enum TodoSubview: String, CaseIterable, Identifiable {
+    case list
+    case calendar
+    case stats
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .list: return "列表"
+        case .calendar: return "日历"
+        case .stats: return "统计"
+        }
+    }
+}
+
+/// The 待办 tab's content: a segmented sub-navigation over the list, calendar,
+/// and stats views. Templates / memo / weekly-report subviews arrive in later
+/// phases.
 struct TodoRootView: View {
     @ObservedObject var model: AppModel
 
+    @State private var subview: TodoSubview = .list
     @State private var quickAddTitle: String = ""
     @State private var isShowingAddForm: Bool = false
     @State private var isShowingArchive: Bool = false
@@ -16,12 +32,20 @@ struct TodoRootView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            quickAddRow
-            if let deleted = model.deletedTodo {
-                undoBanner(deleted)
+            Picker("", selection: $subview) {
+                ForEach(TodoSubview.allCases) { Text($0.label).tag($0) }
             }
-            TodoFilterBar(model: model)
-            listContent
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch subview {
+            case .list:
+                listSubview
+            case .calendar:
+                TodoCalendarView(model: model) { editingTodo = $0 }
+            case .stats:
+                TodoStatsView(model: model)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -70,6 +94,17 @@ struct TodoRootView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
         }
+    }
+
+    @ViewBuilder
+    private var listSubview: some View {
+        quickAddRow
+        if let deleted = model.deletedTodo {
+            undoBanner(deleted)
+        }
+        TodoStatsView(model: model, compact: true)
+        TodoFilterBar(model: model)
+        listContent
     }
 
     private var quickAddRow: some View {

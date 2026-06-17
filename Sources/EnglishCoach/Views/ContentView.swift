@@ -230,6 +230,7 @@ struct ContentView: View {
                         translationCard
                     case .stats:
                         statsOverviewCard
+                        todoStatsCard
                         activityHeatmapCard
                     case .words:
                         wordLearningCard
@@ -426,6 +427,31 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.74))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
+                )
+        )
+    }
+
+    private var todoStatsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("待办统计", systemImage: "checklist")
+                    .font(.headline)
+                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                Spacer()
+                Text("\(model.openTodoCount) 项待完成")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            TodoStatsView(model: model)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -42,6 +42,9 @@ struct TodoRowView: View {
                 Button("上移") { model.moveTodo(id: todo.id, in: todo.date, up: true) }
                 Button("下移") { model.moveTodo(id: todo.id, in: todo.date, up: false) }
             }
+            if todo.isBug && todo.convertedToOptimizationId == nil {
+                Button("转为优化项") { model.convertBugToOptimization(bugId: todo.id) }
+            }
             if isDone {
                 Button("归档") { model.archiveTodo(id: todo.id) }
             }

@@ -2245,6 +2245,10 @@ extension AppModel {
 
     var openTodoCount: Int { openTodos.count }
 
+    var todoStats: TodoStats {
+        TodoStats.compute(todos: todos, today: todoTodayKey(), calendar: calendar)
+    }
+
     // MARK: Mutations
 
     func addTodo(
@@ -2501,6 +2505,44 @@ extension AppModel {
 
     var archivedTodos: [TodoItem] {
         todos.filter(\.archived).sorted { $0.date > $1.date }
+    }
+
+    /// Convert a bug into a fresh optimization task and mark the bug done,
+    /// linking them via `convertedToOptimizationId` (ported from the web app).
+    func convertBugToOptimization(bugId: String) {
+        guard let bug = todos.first(where: { $0.id == bugId }), bug.category == .bug else { return }
+        let now = Date()
+        let today = todoTodayKey()
+        let optimizationId = UUID().uuidString
+
+        var toPersist: [TodoItem] = []
+        for todo in todos where todo.date == today && !todo.archived {
+            var bumped = todo
+            bumped.order += 1
+            toPersist.append(bumped)
+        }
+
+        let optimizationNote = (bug.fixPlan?.isEmpty == false) ? "来源Bug修复方案: \(bug.fixPlan!)" : nil
+        let optimization = TodoItem(
+            id: optimizationId, title: "优化: \(bug.title)", category: .optimization,
+            priority: bug.priority, status: .pending, date: today,
+            createdAt: now, updatedAt: now, completedAt: nil, order: 0, archived: false,
+            dueDate: nil, note: optimizationNote, tags: nil, subtasks: nil, attachments: nil,
+            changelog: nil, bugCause: nil, fixPlan: nil, convertedToOptimizationId: nil
+        )
+        toPersist.append(optimization)
+
+        var resolvedBug = bug
+        resolvedBug.status = .done
+        if resolvedBug.completedAt == nil { resolvedBug.completedAt = now }
+        resolvedBug.convertedToOptimizationId = optimizationId
+        resolvedBug.updatedAt = now
+        toPersist.append(resolvedBug)
+
+        persistTodos(toPersist)
+        refreshTodos()
+        reminderScheduler.cancelTodoReminder(id: bug.id)
+        statusMessage = "已将 Bug 转为优化项"
     }
 
     // MARK: Reorder
