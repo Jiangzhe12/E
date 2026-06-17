@@ -509,36 +509,13 @@ private struct DesktopPetTranslationBubbleView: View {
                 }
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(content.originalText)
-                            .font(.caption)
-                            .foregroundStyle(PetPalette.subtitle)
-                            .lineLimit(1)
-
-                        Text(content.translatedText)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(PetPalette.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-
-                        if let phonetic = content.phonetic {
-                            Text(phonetic)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(PetPalette.violet)
-                                .lineLimit(1)
-                        }
-
-                        if !content.explanationBullets.isEmpty {
-                            VStack(alignment: .leading, spacing: 3) {
-                                ForEach(Array(content.explanationBullets.enumerated()), id: \.offset) { _, explanation in
-                                    Text("· \(explanation)")
-                                        .font(.caption)
-                                        .foregroundStyle(PetPalette.bullet)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                    }
+                    TranslationResultBody(
+                        original: content.originalText,
+                        translated: content.translatedText,
+                        phonetic: content.phonetic,
+                        explanations: content.explanationBullets,
+                        style: .petBubble
+                    )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         GeometryReader { geo in

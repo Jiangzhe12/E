@@ -694,11 +694,14 @@ struct QuickTranslatePopoverView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(result.originalText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                    TranslationResultBody(
+                        original: result.originalText,
+                        translated: result.translatedText,
+                        phonetic: result.phonetic,
+                        explanations: Array(result.explanations.prefix(3)),
+                        originalLineLimit: 2,
+                        style: .panel
+                    ) {
                         Spacer(minLength: 4)
                         Text(result.direction.displayLabel)
                             .font(.caption2.weight(.medium))
@@ -706,29 +709,6 @@ struct QuickTranslatePopoverView: View {
                             .padding(.vertical, 1)
                             .background(Capsule().fill(Color.accentColor.opacity(0.12)))
                             .foregroundStyle(Color.accentColor)
-                    }
-
-                    Text(result.translatedText)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(AppColor.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-
-                    if let phonetic = result.phonetic, !phonetic.isEmpty {
-                        Text(phonetic)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if !result.explanations.isEmpty {
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(Array(result.explanations.prefix(3).enumerated()), id: \.offset) { _, explanation in
-                                Text("· \(explanation)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
                     }
 
                     HStack(spacing: 10) {
