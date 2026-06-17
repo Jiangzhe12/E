@@ -1134,10 +1134,20 @@ private struct DesktopPetTodoFormBubbleView: View {
     @State private var title = ""
     @State private var category: TodoCategory = .feature
     @State private var priority: TodoPriority = .medium
-    @State private var hasDue = false
-    @State private var due = Date()
+    @State private var dueKey: String?
     @State private var note = ""
     @FocusState private var titleFocused: Bool
+
+    private var todayKey: String { todoDayKey(for: Date()) }
+    private var tomorrowKey: String {
+        todoDayKey(for: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
+    }
+    private var fridayKey: String {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let add = (6 - calendar.component(.weekday, from: today) + 7) % 7
+        return todoDayKey(for: calendar.date(byAdding: .day, value: add, to: today) ?? today)
+    }
 
     private let lightText = Color(red: 0.92, green: 0.99, blue: 1.0)
     private let subText = Color(red: 0.72, green: 0.82, blue: 0.98)
@@ -1163,20 +1173,16 @@ private struct DesktopPetTodoFormBubbleView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Toggle(isOn: $hasDue) {
-                        Text("截止").font(.caption).foregroundStyle(subText)
+                labeledRow("截止") {
+                    chip("今天", selected: dueKey == todayKey) { dueKey = dueKey == todayKey ? nil : todayKey }
+                    chip("明天", selected: dueKey == tomorrowKey) { dueKey = dueKey == tomorrowKey ? nil : tomorrowKey }
+                    chip("周五", selected: dueKey == fridayKey) { dueKey = dueKey == fridayKey ? nil : fridayKey }
+                    if dueKey != nil {
+                        Button { dueKey = nil } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(subText)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .tint(accent)
-                    if hasDue {
-                        DatePicker("", selection: $due, displayedComponents: .date)
-                            .datePickerStyle(.field)
-                            .labelsHidden()
-                            .controlSize(.small)
-                    }
-                    Spacer(minLength: 0)
                 }
 
                 darkField("备注（可选）", text: $note)
@@ -1236,7 +1242,7 @@ private struct DesktopPetTodoFormBubbleView: View {
             title: trimmed,
             category: category,
             priority: priority,
-            dueDate: hasDue ? todoDayKey(for: due) : nil,
+            dueDate: dueKey,
             note: trimmedNote.isEmpty ? nil : trimmedNote
         ))
     }

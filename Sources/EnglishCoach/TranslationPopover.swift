@@ -1,11 +1,21 @@
 import AppKit
 import SwiftUI
 
+/// The desktop-pet floating panel. Borderless panels can't become key by
+/// default, which blocks text input. We let it become key only while an
+/// in-bubble form (e.g. 新建待办) is showing, so typing works then but the pet
+/// stays non-activating the rest of the time.
+final class DesktopPetPanel: NSPanel {
+    var keyInputEnabled = false
+    override var canBecomeKey: Bool { keyInputEnabled }
+    override var canBecomeMain: Bool { false }
+}
+
 /// A lightweight floating panel that shows ⌘C⌘C translation results near the
 /// mouse cursor without stealing keyboard focus from the user's current app.
 @MainActor
 final class TranslationPopoverController: NSObject, NSWindowDelegate {
-    private var panel: NSPanel?
+    private var panel: DesktopPetPanel?
     private var autoDismissTimer: Timer?
     private var autoDismissAction: (() -> Void)?
     private var globalClickMonitor: Any?
@@ -107,8 +117,6 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         presentDesktopPetBubble(panel, near: nil) {
             desktopPetState.showTodoForm()
         }
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Result popover (⌘C⌘C)
@@ -200,6 +208,7 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
     func dismiss() {
         cancelAutoDismissTimer()
         removeGlobalClickMonitor()
+        panel?.keyInputEnabled = false
         if let panel, panel.isVisible {
             syncDesktopPetAnchor(from: panel)
             desktopPetState.clearBubble()
@@ -294,7 +303,7 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         )
         hostingView.setFrameSize(desktopPetIdlePanelSize)
 
-        let panel = NSPanel(
+        let panel = DesktopPetPanel(
             contentRect: NSRect(origin: .zero, size: desktopPetIdlePanelSize),
             styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
@@ -467,6 +476,18 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         }
         panel.displayIfNeeded()
         panel.orderFrontRegardless()
+
+        // Only the in-bubble form needs keyboard input; enable key + activate
+        // for it, and keep the pet non-activating for every other bubble.
+        if let petPanel = panel as? DesktopPetPanel {
+            if case .todoForm = desktopPetState.bubble {
+                petPanel.keyInputEnabled = true
+                NSApp.activate(ignoringOtherApps: true)
+                petPanel.makeKeyAndOrderFront(nil)
+            } else {
+                petPanel.keyInputEnabled = false
+            }
+        }
     }
 
     private func syncDesktopPetAnchor(from panel: NSPanel) {
