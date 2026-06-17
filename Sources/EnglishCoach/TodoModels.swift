@@ -205,6 +205,15 @@ func makeTodoFromTemplate(
     )
 }
 
+/// A new-todo draft captured from the desktop pet's in-bubble form.
+struct NewTodoDraft: Equatable {
+    var title: String
+    var category: TodoCategory
+    var priority: TodoPriority
+    var dueDate: String?
+    var note: String?
+}
+
 /// How a due date relates to today, used for label text + color.
 enum TodoDueKind {
     case overdue

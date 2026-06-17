@@ -281,8 +281,10 @@ final class AppModel: ObservableObject {
             self?.addLookupToLearningFromBubble(result)
         }
         self.popoverController.onRequestQuickAddTodo = { [weak self] in
-            guard let self else { return }
-            self.popoverController.presentQuickAddTodo(model: self, near: self.bestPopoverPosition())
+            self?.popoverController.presentTodoFormBubble()
+        }
+        self.popoverController.onSubmitNewTodo = { [weak self] draft in
+            self?.addTodoFromPet(draft)
         }
         self.popoverController.onRequestShowTodos = { [weak self] in
             self?.showDesktopTodos()
@@ -2403,6 +2405,18 @@ extension AppModel {
     }
 
     // MARK: Desktop pet
+
+    /// Add a todo submitted from the pet's in-bubble form, then confirm.
+    func addTodoFromPet(_ draft: NewTodoDraft) {
+        addTodo(
+            title: draft.title,
+            category: draft.category,
+            priority: draft.priority,
+            dueDate: draft.dueDate,
+            note: draft.note
+        )
+        popoverController.presentFeedback(title: "已添加待办", message: draft.title)
+    }
 
     /// Show today's open todos in an interactive pet bubble.
     func showDesktopTodos() {

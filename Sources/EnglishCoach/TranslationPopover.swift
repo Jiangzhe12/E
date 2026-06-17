@@ -37,9 +37,9 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
     var onRequestShowTodos: (() -> Void)?
     var onCompleteTodo: ((String) -> Void)?
     var onRequestOpenTodoList: (() -> Void)?
+    var onSubmitNewTodo: ((NewTodoDraft) -> Void)?
 
     private var quickTranslatePanel: NSPanel?
-    private var quickAddTodoPanel: NSPanel?
     private let quickPanelWidth: CGFloat = 420
 
     // MARK: - Quick Translate panel (⌘E)
@@ -97,55 +97,18 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         quickTranslatePanel?.orderOut(nil)
     }
 
-    // MARK: - Add Todo panel (pet right-click) — same form as 详细新建
+    // MARK: - New-todo form bubble (pet right-click)
 
-    func presentQuickAddTodo(model: AppModel, near point: NSPoint) {
-        if let existing = quickAddTodoPanel, existing.isVisible {
-            existing.orderFrontRegardless()
-            existing.makeKey()
-            NSApp.activate(ignoringOtherApps: true)
-            return
+    /// Show the new-todo form inside the pet's speech bubble. Makes the panel
+    /// key so the bubble's text fields accept typing.
+    func presentTodoFormBubble() {
+        cancelAutoDismissTimer()
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: nil) {
+            desktopPetState.showTodoForm()
         }
-
-        let hostingView = NSHostingView(
-            rootView: TodoFormView(
-                model: model,
-                editing: nil,
-                onClose: { [weak self] in self?.dismissQuickAddTodo() }
-            )
-        )
-        let fitting = hostingView.fittingSize
-        let contentSize = NSSize(width: max(fitting.width, quickPanelWidth), height: max(fitting.height, 360))
-
-        let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: contentSize),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .utilityWindow],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.level = .floating
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = true
-        panel.isReleasedWhenClosed = false
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.minSize = NSSize(width: 420, height: 320)
-        panel.contentView = hostingView
-
-        positionPanel(panel, near: point)
-        panel.orderFrontRegardless()
-        panel.makeKey()
+        panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-
-        quickAddTodoPanel = panel
-    }
-
-    func dismissQuickAddTodo() {
-        quickAddTodoPanel?.orderOut(nil)
     }
 
     // MARK: - Result popover (⌘C⌘C)
@@ -323,6 +286,9 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
                 onOpenTodoList: { [weak self] in
                     self?.onRequestOpenTodoList?()
                     self?.dismiss()
+                },
+                onSubmitNewTodo: { [weak self] draft in
+                    self?.onSubmitNewTodo?(draft)
                 }
             )
         )

@@ -18,6 +18,7 @@ enum DesktopPetBubble {
     case dailyWordCompletion(message: String)
     case feedback(title: String, message: String)
     case todoList(rows: [DesktopPetTodoRow], openCount: Int)
+    case todoForm
 }
 
 enum DesktopPetMood {
@@ -64,6 +65,8 @@ final class DesktopPetPresentationState: ObservableObject {
         case .feedback:
             return .success
         case .todoList:
+            return .learning
+        case .todoForm:
             return .learning
         }
     }
@@ -116,6 +119,11 @@ final class DesktopPetPresentationState: ObservableObject {
         bubbleID = UUID()
     }
 
+    func showTodoForm() {
+        bubble = .todoForm
+        bubbleID = UUID()
+    }
+
     func clearBubble() {
         bubble = .none
         bubbleID = UUID()
@@ -145,6 +153,7 @@ struct DesktopPetTranslationView: View {
     let onShowTodos: () -> Void
     let onCompleteTodo: (String) -> Void
     let onOpenTodoList: () -> Void
+    let onSubmitNewTodo: (NewTodoDraft) -> Void
 
     @State private var isFloating = false
     @State private var isHovering = false
@@ -310,6 +319,14 @@ struct DesktopPetTranslationView: View {
                     tailPosition: bubbleTailPosition,
                     onCompleteTodo: onCompleteTodo,
                     onOpenList: onOpenTodoList,
+                    onCloseBubble: onCloseBubble
+                )
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            case .todoForm:
+                DesktopPetTodoFormBubbleView(
+                    tailOffset: bubbleTailOffset,
+                    tailPosition: bubbleTailPosition,
+                    onSubmit: onSubmitNewTodo,
                     onCloseBubble: onCloseBubble
                 )
                 .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
@@ -1105,6 +1122,123 @@ private struct DesktopPetTodoListBubbleView: View {
                 }
             }
         }
+    }
+}
+
+private struct DesktopPetTodoFormBubbleView: View {
+    let tailOffset: CGFloat
+    let tailPosition: DesktopPetBubbleTailPosition
+    let onSubmit: (NewTodoDraft) -> Void
+    let onCloseBubble: () -> Void
+
+    @State private var title = ""
+    @State private var category: TodoCategory = .feature
+    @State private var priority: TodoPriority = .medium
+    @State private var hasDue = false
+    @State private var due = Date()
+    @State private var note = ""
+    @FocusState private var titleFocused: Bool
+
+    private let lightText = Color(red: 0.92, green: 0.99, blue: 1.0)
+    private let subText = Color(red: 0.72, green: 0.82, blue: 0.98)
+    private let accent = Color(red: 0.42, green: 0.94, blue: 1.0)
+
+    var body: some View {
+        DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
+            VStack(alignment: .leading, spacing: 9) {
+                DesktopPetBubbleHeader(icon: "plus.circle", title: "新建待办", onCloseBubble: onCloseBubble)
+
+                darkField("待办标题", text: $title)
+                    .focused($titleFocused)
+                    .onSubmit(submit)
+
+                labeledRow("分类") {
+                    ForEach(TodoCategory.allCases) { item in
+                        chip(item.title, selected: category == item) { category = item }
+                    }
+                }
+                labeledRow("优先级") {
+                    ForEach(TodoPriority.allCases) { item in
+                        chip(item.title, selected: priority == item) { priority = item }
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Toggle(isOn: $hasDue) {
+                        Text("截止").font(.caption).foregroundStyle(subText)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(accent)
+                    if hasDue {
+                        DatePicker("", selection: $due, displayedComponents: .date)
+                            .datePickerStyle(.field)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                darkField("备注（可选）", text: $note)
+
+                HStack {
+                    Spacer(minLength: 0)
+                    DesktopPetCompactButton(
+                        title: "添加",
+                        systemImage: "checkmark.circle.fill",
+                        visualStyle: .learn,
+                        action: submit
+                    )
+                }
+            }
+        }
+        .onAppear { titleFocused = true }
+    }
+
+    @ViewBuilder
+    private func labeledRow<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.caption2).foregroundStyle(subText).frame(width: 34, alignment: .leading)
+            content()
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func darkField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(.callout)
+            .foregroundStyle(lightText)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.04, green: 0.09, blue: 0.26).opacity(0.92)))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(accent.opacity(0.30), lineWidth: 1))
+    }
+
+    private func chip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption.weight(selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color(red: 0.04, green: 0.08, blue: 0.20) : lightText)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(Capsule(style: .continuous).fill(selected ? accent : Color.white.opacity(0.08)))
+                .overlay(Capsule(style: .continuous).stroke(accent.opacity(selected ? 0 : 0.45), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func submit() {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        onSubmit(NewTodoDraft(
+            title: trimmed,
+            category: category,
+            priority: priority,
+            dueDate: hasDue ? todoDayKey(for: due) : nil,
+            note: trimmedNote.isEmpty ? nil : trimmedNote
+        ))
     }
 }
 
