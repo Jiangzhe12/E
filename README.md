@@ -119,4 +119,7 @@ swiftc Sources/EnglishCoach/DailyWordProgress.swift Tests/DailyWordProgressTests
 swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.swift Tests/TodoCarryOverTests/main.swift -o /tmp/TodoCarryOverTests && /tmp/TodoCarryOverTests
 swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/LegacyTodoDecoder.swift Tests/TodoMigrationMappingTests/main.swift -o /tmp/TodoMigrationMappingTests && /tmp/TodoMigrationMappingTests
 swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.swift Sources/EnglishCoach/LegacyTodoDecoder.swift Sources/EnglishCoach/TodoStore.swift Tests/TodoStoreCRUDTests/main.swift -lsqlite3 -o /tmp/TodoStoreCRUDTests && /tmp/TodoStoreCRUDTests
+swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoFilter.swift Tests/TodoFilterSortTests/main.swift -o /tmp/TodoFilterSortTests && /tmp/TodoFilterSortTests
+swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoStats.swift Tests/TodoStatsTests/main.swift -o /tmp/TodoStatsTests && /tmp/TodoStatsTests
+swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/WeeklyReport.swift Tests/WeeklyReportTests/main.swift -o /tmp/WeeklyReportTests && /tmp/WeeklyReportTests
 ```

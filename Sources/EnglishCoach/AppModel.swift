@@ -2600,6 +2600,24 @@ extension AppModel {
         }
     }
 
+    // MARK: Weekly report
+
+    func weeklyReport(offset: Int) -> WeeklyReport {
+        WeeklyReport.generate(todos: todos, offset: offset, calendar: calendar)
+    }
+
+    /// Persist a user-edited report, keyed by the week-start "MM/dd".
+    func saveWeeklyReport(weekStart: String, text: String) {
+        savedReports[weekStart] = text
+        try? todoStore?.saveSavedReports(savedReports)
+        statusMessage = "已保存周报 \(weekStart)"
+    }
+
+    func clearSavedReport(weekStart: String) {
+        savedReports[weekStart] = nil
+        try? todoStore?.saveSavedReports(savedReports)
+    }
+
     // MARK: Reminders
 
     /// Schedule or cancel the due reminder for one todo, based on its state.
@@ -2615,12 +2633,15 @@ extension AppModel {
         }
     }
 
-    /// Re-arm reminders for all open, future-dated todos (covers app restarts).
+    /// Re-arm reminders for all open, future-dated todos plus the weekly-report
+    /// nudge (covers app restarts). Skips entirely when there are no todos so a
+    /// fresh user isn't prompted for notification permission unnecessarily.
     func rescheduleAllTodoReminders() {
+        guard !todos.isEmpty else { return }
         let due = todos.filter { !$0.archived && $0.status != .done && ($0.dueDate?.isEmpty == false) }
-        guard !due.isEmpty else { return }
         Task {
             guard await reminderScheduler.requestAuthorizationIfNeeded() else { return }
+            reminderScheduler.scheduleWeeklyReportReminder()
             for todo in due {
                 if let key = todo.dueDate {
                     reminderScheduler.scheduleTodoReminder(id: todo.id, title: todo.title, dueDateKey: key)

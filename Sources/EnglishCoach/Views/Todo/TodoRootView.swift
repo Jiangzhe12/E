@@ -4,6 +4,7 @@ enum TodoSubview: String, CaseIterable, Identifiable {
     case list
     case calendar
     case stats
+    case report
 
     var id: String { rawValue }
     var label: String {
@@ -11,6 +12,7 @@ enum TodoSubview: String, CaseIterable, Identifiable {
         case .list: return "列表"
         case .calendar: return "日历"
         case .stats: return "统计"
+        case .report: return "周报"
         }
     }
 }
@@ -45,6 +47,8 @@ struct TodoRootView: View {
                 TodoCalendarView(model: model) { editingTodo = $0 }
             case .stats:
                 TodoStatsView(model: model)
+            case .report:
+                WeeklyReportView(model: model)
             }
         }
         .padding(16)

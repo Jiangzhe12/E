@@ -103,6 +103,30 @@ final class ReminderScheduler {
         center.removePendingNotificationRequests(withIdentifiers: ["todo-\(id)"])
     }
 
+    /// Weekly repeating nudge to review the todo weekly report (Friday 14:00).
+    func scheduleWeeklyReportReminder() {
+        let reminderID = "weekly-report"
+        center.removePendingNotificationRequests(withIdentifiers: [reminderID])
+
+        var components = DateComponents()
+        components.weekday = 6  // Friday (1 = Sunday)
+        components.hour = 14
+        components.minute = 0
+
+        let content = UNMutableNotificationContent()
+        content.title = "周报时间"
+        content.body = "回顾一下本周的待办，写写周报吧"
+        content.sound = .default
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        let request = UNNotificationRequest(identifier: reminderID, content: content, trigger: trigger)
+        center.add(request) { error in
+            if let error {
+                NSLog("[ReminderScheduler] weekly report schedule failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     /// Skip today's firing without losing future days. If the reminder time is
     /// still in the future today, we remove the pending request and schedule a
     /// single-shot request for tomorrow at the same time; a later call to
