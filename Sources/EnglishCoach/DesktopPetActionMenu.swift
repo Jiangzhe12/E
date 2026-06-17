@@ -69,6 +69,8 @@ struct DesktopPetActionMenuItem: Identifiable, Equatable {
         case quickTranslate
         case translateClipboard
         case dailyWord
+        case quickAddTodo
+        case showTodos
         case lastTranslation
         case openMainWindow
         case quit
@@ -99,6 +101,18 @@ struct DesktopPetActionMenuItem: Identifiable, Equatable {
             title: "今日单词",
             systemImage: "text.book.closed",
             visualStyle: DesktopPetActionMenuVisualStyle(id: "mint", accentHex: "7CFFD0", fillHex: "102D3C", borderHex: "56E2BC")
+        ),
+        DesktopPetActionMenuItem(
+            action: .quickAddTodo,
+            title: "快速记待办",
+            systemImage: "plus.rectangle.on.rectangle",
+            visualStyle: DesktopPetActionMenuVisualStyle(id: "todoAdd", accentHex: "FFD08A", fillHex: "322410", borderHex: "F2B84B")
+        ),
+        DesktopPetActionMenuItem(
+            action: .showTodos,
+            title: "今日待办",
+            systemImage: "checklist",
+            visualStyle: DesktopPetActionMenuVisualStyle(id: "todoList", accentHex: "8CFFC0", fillHex: "12363A", borderHex: "63E6A6")
         ),
         DesktopPetActionMenuItem(
             action: .lastTranslation,

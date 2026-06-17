@@ -7,6 +7,7 @@ private enum DetailTab: String, CaseIterable, Identifiable {
     case words
     case route
     case interest
+    case todos
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ private enum DetailTab: String, CaseIterable, Identifiable {
         case .words: return "单词"
         case .route: return "路线"
         case .interest: return "兴趣"
+        case .todos: return "待办"
         }
     }
 
@@ -27,6 +29,7 @@ private enum DetailTab: String, CaseIterable, Identifiable {
         case .words: return "text.book.closed"
         case .route: return "map"
         case .interest: return "lightbulb"
+        case .todos: return "checklist"
         }
     }
 }
@@ -69,6 +72,12 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
         )
+        .onChange(of: model.shouldFocusTodoTab) { _, shouldFocus in
+            if shouldFocus {
+                selectedTab = .todos
+                model.shouldFocusTodoTab = false
+            }
+        }
         .onAppear {
             if !didPerformInitialActivation {
                 didPerformInitialActivation = true
@@ -230,6 +239,8 @@ struct ContentView: View {
                         productionDrillCard
                     case .interest:
                         interestLearningCard
+                    case .todos:
+                        TodoRootView(model: model)
                     }
                 }
                 .padding(24)

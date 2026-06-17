@@ -27,6 +27,7 @@ struct EnglishCoachApp: App {
                     model.refreshDailyCompletionState()
                     model.refreshPermissionStatus()
                     model.syncDesktopPetVisibility()
+                    model.runTodoCarryOverIfNeeded()
                     iconManager.applyLearningState(
                         completedToday: model.hasCompletedLearningToday,
                         animateTransition: false

@@ -53,6 +53,27 @@ final class AppModel: ObservableObject {
     @Published var drillGradeError: String?
     @Published var drillsGradedToday: Int = 0
 
+    // MARK: - 待办清单
+    @Published var todos: [TodoItem] = []
+    @Published var customTags: [String] = []
+    @Published var templates: [TodoTemplate] = []
+    @Published var savedReports: [String: String] = [:]
+    @Published var todoMemo: String = ""
+    @Published var todoMemoUpdatedAt: Date?
+    /// Filter / search / sort UI state (not persisted, mirrors the web app).
+    @Published var todoFilterCategory: TodoCategory?
+    @Published var todoFilterStatus: TodoStatus?
+    @Published var todoSearchQuery: String = ""
+    @Published var todoFilterTag: String = ""
+    @Published var todoSortByPriority: Bool = false
+    /// Most recently deleted todo, surfaced as an undo affordance.
+    @Published var deletedTodo: TodoItem?
+    /// Weekly-report week offset (0 = current week, -1 = last week).
+    @Published var weeklyReportOffset: Int = 0
+    /// Set when the desktop pet wants the main window opened on the 待办 tab;
+    /// ContentView observes this and switches tabs, then resets it.
+    @Published var shouldFocusTodoTab: Bool = false
+
     @Published var translationPresentationMode: TranslationPresentation = .floating {
         didSet {
             guard oldValue != translationPresentationMode else { return }
@@ -94,6 +115,11 @@ final class AppModel: ObservableObject {
     private let selectedTextService: SelectedTextService
     private let translationService: TranslationService
     private let historyStore: HistoryStore?
+    /// SQLite-backed todo list (ported from the standalone TodoList app). `nil`
+    /// if the store failed to open — the UI degrades gracefully.
+    private let todoStore: TodoStore?
+    /// Pending hard-delete of a todo, cancelable within the undo window.
+    private var todoUndoWorkItem: DispatchWorkItem?
     private let defaults: UserDefaults
     private let wordCarouselStore: WordCarouselStore
     private let masteredWordDictionary = ECDICTDictionary()
@@ -191,6 +217,13 @@ final class AppModel: ObservableObject {
             statusMessage = "数据库初始化失败：\(error.localizedDescription)"
         }
 
+        do {
+            todoStore = try TodoStore()
+        } catch {
+            todoStore = nil
+            statusMessage = "待办数据初始化失败：\(error.localizedDescription)"
+        }
+
         hasAccessibilityPermission = selectedTextService.isAccessibilityTrusted()
 
         if let raw = defaults.string(forKey: Self.translationPresentationModeKey),
@@ -245,6 +278,18 @@ final class AppModel: ObservableObject {
         self.popoverController.onAddToLearning = { [weak self] result in
             self?.addLookupToLearningFromBubble(result)
         }
+        self.popoverController.onRequestQuickAddTodo = { [weak self] in
+            self?.quickAddTodoFromClipboard()
+        }
+        self.popoverController.onRequestShowTodos = { [weak self] in
+            self?.showDesktopTodos()
+        }
+        self.popoverController.onCompleteTodo = { [weak self] id in
+            self?.completeTodoFromPet(id: id)
+        }
+        self.popoverController.onRequestOpenTodoList = { [weak self] in
+            self?.openTodoListFromPet()
+        }
 
         self.hotkeyManager.onHotKeyPressed = { [weak self] in
             guard let self else { return }
@@ -280,6 +325,7 @@ final class AppModel: ObservableObject {
         refreshWordCarouselIfNeeded()
         refreshMeetingPhrasesIfNeeded()
         loadProductionDrillState()
+        loadTodoState()
 
         Task {
             await refreshHistory()
@@ -428,6 +474,11 @@ final class AppModel: ObservableObject {
         }
         for date in productionDrillDates {
             counts[Self.dayKey(for: date, calendar: calendar), default: 0] += 1
+        }
+        for todo in todos {
+            if let completedAt = todo.completedAt {
+                counts[Self.dayKey(for: completedAt, calendar: calendar), default: 0] += 1
+            }
         }
         return counts
     }
@@ -2122,4 +2173,277 @@ final class AppModel: ObservableObject {
             )
         ]
     ]
+}
+
+// MARK: - 待办清单
+
+extension AppModel {
+    /// Today's "YYYY-MM-DD" key, in the app calendar's timezone.
+    private func todoTodayKey() -> String {
+        todoDayKey(for: Date(), calendar: calendar)
+    }
+
+    /// Imports the legacy app's data once, runs daily carry-over, and loads the
+    /// in-memory todo state. Called at startup.
+    func loadTodoState() {
+        guard let store = todoStore else { return }
+        let today = todoTodayKey()
+        do {
+            _ = try store.importLegacyDataIfNeeded(today: today)
+            todos = try store.runCarryOver(today: today)
+            customTags = try store.loadCustomTags()
+            templates = try store.loadTemplates()
+            savedReports = try store.loadSavedReports()
+            let memo = try store.loadMemo()
+            todoMemo = memo.text
+            todoMemoUpdatedAt = memo.updatedAt
+        } catch {
+            statusMessage = "待办数据加载失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// Re-runs carry-over if the day rolled over since the app was last active.
+    func runTodoCarryOverIfNeeded() {
+        guard let store = todoStore else { return }
+        let today = todoTodayKey()
+        if (try? store.loadLastOpenDate()) == today { return }
+        todos = (try? store.runCarryOver(today: today)) ?? todos
+    }
+
+    func refreshTodos() {
+        guard let store = todoStore else { return }
+        todos = (try? store.fetchAll()) ?? todos
+    }
+
+    // MARK: Derived state
+
+    var visibleTodoGroups: [TodoDateGroup] {
+        TodoFilter.visibleGroups(
+            todos: todos,
+            category: todoFilterCategory,
+            status: todoFilterStatus,
+            search: todoSearchQuery,
+            tag: todoFilterTag,
+            sortByPriority: todoSortByPriority
+        )
+    }
+
+    /// Open (non-archived, non-done) todos, soonest-due first.
+    var openTodos: [TodoItem] {
+        todos
+            .filter { !$0.archived && $0.status != .done }
+            .sorted { lhs, rhs in
+                switch (lhs.dueDate, rhs.dueDate) {
+                case let (l?, r?) where l != r: return l < r
+                case (.some, .none): return true
+                case (.none, .some): return false
+                default: return lhs.order < rhs.order
+                }
+            }
+    }
+
+    var openTodoCount: Int { openTodos.count }
+
+    // MARK: Mutations
+
+    func addTodo(
+        title: String,
+        category: TodoCategory = .feature,
+        priority: TodoPriority = .medium,
+        dueDate: String? = nil,
+        note: String? = nil,
+        tags: [String]? = nil,
+        bugCause: String? = nil,
+        fixPlan: String? = nil
+    ) {
+        let trimmedTitle = title.trimmed
+        guard !trimmedTitle.isEmpty else { return }
+        let now = Date()
+        let today = todoTodayKey()
+
+        // Bump existing same-date todos down so the new one lands on top.
+        var toPersist: [TodoItem] = []
+        for todo in todos where todo.date == today && !todo.archived {
+            var bumped = todo
+            bumped.order += 1
+            toPersist.append(bumped)
+        }
+
+        let item = TodoItem(
+            id: UUID().uuidString,
+            title: trimmedTitle,
+            category: category,
+            priority: priority,
+            status: .pending,
+            date: today,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: nil,
+            order: 0,
+            archived: false,
+            dueDate: dueDate,
+            note: note?.trimmed.isEmpty == true ? nil : note,
+            tags: tags,
+            subtasks: nil,
+            attachments: nil,
+            changelog: nil,
+            bugCause: bugCause,
+            fixPlan: fixPlan,
+            convertedToOptimizationId: nil
+        )
+        toPersist.append(item)
+
+        persistTodos(toPersist)
+        refreshTodos()
+        statusMessage = "已添加待办：\(trimmedTitle)"
+    }
+
+    /// Applies an edit, records changelog entries for tracked-field changes,
+    /// enforces the "completedAt is set once, never cleared" rule, persists, and
+    /// refreshes.
+    func updateTodo(id: String, _ mutate: (inout TodoItem) -> Void) {
+        guard let index = todos.firstIndex(where: { $0.id == id }) else { return }
+        let old = todos[index]
+        var new = old
+        mutate(&new)
+        let now = Date()
+        new.updatedAt = now
+
+        var log = new.changelog ?? []
+        func track(_ field: TrackedField, _ before: String?, _ after: String?) {
+            guard before != after else { return }
+            log.append(ChangeLogEntry(timestamp: now, field: field.rawValue, oldValue: before, newValue: after))
+        }
+        track(.title, old.title, new.title)
+        track(.category, old.category.title, new.category.title)
+        track(.priority, old.priority.title, new.priority.title)
+        track(.status, old.status.chineseLabel, new.status.chineseLabel)
+        track(.dueDate, old.dueDate, new.dueDate)
+        track(.note, old.note, new.note)
+        if log.count != (old.changelog?.count ?? 0) {
+            new.changelog = log
+        }
+
+        // completedAt: set on first transition to done, never cleared.
+        if new.status == .done && new.completedAt == nil {
+            new.completedAt = now
+        }
+
+        persistTodo(new)
+        refreshTodos()
+    }
+
+    func toggleTodoStatus(id: String) {
+        updateTodo(id: id) { $0.status = $0.status.next }
+    }
+
+    func deleteTodo(id: String) {
+        guard let todo = todos.first(where: { $0.id == id }) else { return }
+        todoUndoWorkItem?.cancel()
+
+        deletedTodo = todo
+        do {
+            try todoStore?.delete(id: id)
+        } catch {
+            statusMessage = "删除待办失败：\(error.localizedDescription)"
+        }
+        refreshTodos()
+
+        // Auto-clear the undo affordance after the window passes.
+        let work = DispatchWorkItem { [weak self] in
+            self?.deletedTodo = nil
+            self?.todoUndoWorkItem = nil
+        }
+        todoUndoWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
+    }
+
+    func undoDeleteTodo() {
+        guard let todo = deletedTodo else { return }
+        todoUndoWorkItem?.cancel()
+        todoUndoWorkItem = nil
+        persistTodo(todo)
+        deletedTodo = nil
+        refreshTodos()
+    }
+
+    func clearDeletedTodo() {
+        todoUndoWorkItem?.cancel()
+        todoUndoWorkItem = nil
+        deletedTodo = nil
+    }
+
+    private func persistTodo(_ item: TodoItem) {
+        guard let store = todoStore else { return }
+        do {
+            try store.upsert(item)
+        } catch {
+            statusMessage = "保存待办失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func persistTodos(_ items: [TodoItem]) {
+        guard let store = todoStore, !items.isEmpty else { return }
+        do {
+            try store.upsertMany(items)
+        } catch {
+            statusMessage = "保存待办失败：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: Desktop pet
+
+    /// Quick-add from the pet: turn the clipboard text into a todo.
+    func quickAddTodoFromClipboard() {
+        let clip = NSPasteboard.general.string(forType: .string)?.trimmed ?? ""
+        guard !clip.isEmpty else {
+            popoverController.presentFeedback(title: "剪贴板为空", message: "先复制一段文字，再记成待办")
+            return
+        }
+        addTodo(title: clip)
+        popoverController.presentFeedback(title: "已添加待办", message: clip)
+    }
+
+    /// Show today's open todos in an interactive pet bubble.
+    func showDesktopTodos() {
+        refreshTodos()
+        let today = todoTodayKey()
+        let open = openTodos
+        guard !open.isEmpty else {
+            popoverController.presentFeedback(title: "待办", message: "今天没有未完成的待办 🎉")
+            return
+        }
+        let rows = open.prefix(4).map { todo in
+            DesktopPetTodoRow(
+                id: todo.id,
+                title: todo.title,
+                dueLabel: todoDueInfo(dueDate: todo.dueDate, today: today, calendar: calendar)?.text
+            )
+        }
+        popoverController.presentTodoBubble(rows: Array(rows), openCount: open.count)
+    }
+
+    /// Mark a todo done from the pet bubble, then re-present so the next item
+    /// surfaces (mirrors the daily-word advance flow).
+    func completeTodoFromPet(id: String) {
+        guard let todo = todos.first(where: { $0.id == id }) else {
+            showDesktopTodos()
+            return
+        }
+        let title = todo.title
+        updateTodo(id: id) { $0.status = .done }
+        popoverController.presentFeedback(
+            title: "已完成",
+            message: title,
+            autoDismissAfter: DesktopPetBubbleTiming.dailyWordFeedbackAutoAdvanceSeconds
+        ) { [weak self] in
+            self?.showDesktopTodos()
+        }
+    }
+
+    /// Open the main window focused on the 待办 tab (pet "打开列表").
+    func openTodoListFromPet() {
+        shouldFocusTodoTab = true
+        openMainWindow()
+    }
 }

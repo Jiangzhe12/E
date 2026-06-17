@@ -33,6 +33,10 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
     var onDailyWordPractice: ((DesktopWordCard) -> Void)?
     var onStartNextDailyWordGroup: (() -> Void)?
     var onAddToLearning: ((TranslationResult) -> Void)?
+    var onRequestQuickAddTodo: (() -> Void)?
+    var onRequestShowTodos: (() -> Void)?
+    var onCompleteTodo: ((String) -> Void)?
+    var onRequestOpenTodoList: (() -> Void)?
 
     private var quickTranslatePanel: NSPanel?
     private let quickPanelWidth: CGFloat = 420
@@ -157,6 +161,14 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
         }
     }
 
+    func presentTodoBubble(rows: [DesktopPetTodoRow], openCount: Int) {
+        cancelAutoDismissTimer()
+        let panel = ensureDesktopPetPanel()
+        presentDesktopPetBubble(panel, near: nil) {
+            desktopPetState.showTodos(rows: rows, openCount: openCount)
+        }
+    }
+
     func presentFeedback(
         title: String,
         message: String,
@@ -246,6 +258,19 @@ final class TranslationPopoverController: NSObject, NSWindowDelegate {
                 },
                 onSpeakDailyWord: { [weak self] card in
                     self?.speechService.speak(card.word)
+                },
+                onQuickAddTodo: { [weak self] in
+                    self?.onRequestQuickAddTodo?()
+                },
+                onShowTodos: { [weak self] in
+                    self?.onRequestShowTodos?()
+                },
+                onCompleteTodo: { [weak self] id in
+                    self?.onCompleteTodo?(id)
+                },
+                onOpenTodoList: { [weak self] in
+                    self?.onRequestOpenTodoList?()
+                    self?.dismiss()
                 }
             )
         )

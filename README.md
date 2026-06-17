@@ -18,6 +18,7 @@
 - 学习路线板块（面向「开会能跟上、能开口」）：以能力进阶分关卡（句块速记 → 跟读 → 中译英产出 → 角色扮演）。
   - 「关卡1 · 会议口语句块」——内置高频会议/通话句块库（没听清、争取时间、表态异议、收尾、寒暄五类），复用单词的 SRS 复习引擎；卡片采用「产出优先」设计：正面只给中文场景，先在脑中说出英文再揭晓对照，可朗读、标记掌握并进入间隔复习
   - 「关卡3 · 中译英产出 + AI 批改」——内置工作/会议语境的中译英题，用户写出英文后由 Claude（本地 CLI 或 API）批改，返回评级（很地道/基本可用/可以更好）、更地道的改写版本（可朗读）、1-3 条中文反馈与参考答案；批改次数计入活跃度与连胜。`freeOnly` 引擎下提示需切换到 AI 引擎
+- 待办清单（从独立 TodoList app 原生并入）：主窗口「待办」分页支持快速添加、详细新建（分类 功能/Bug/优化、优先级、截止日期、备注、Bug 详情）、状态切换（待办→进行中→已完成）、按日期分组、搜索/分类/状态筛选、删除并 4 秒内撤销；跨天自动顺延（未完成顺延到今天、过期已完成自动归档）；首次启动一次性导入旧 app 的历史待办；桌宠菜单可「快速记待办」（读剪贴板）、「今日待办」（气泡内直接标记完成 / 打开列表）
 
 ## 运行
 
@@ -115,4 +116,7 @@ swift build --disable-sandbox
 swiftc Sources/EnglishCoach/Models.swift Sources/EnglishCoach/MeetingPhraseBank.swift Sources/EnglishCoach/ProductionDrill.swift Sources/EnglishCoach/ClaudeTranslationProvider.swift Sources/EnglishCoach/ClaudeCLITranslationProvider.swift Tests/ClaudeCLISafetyTests/main.swift -o /tmp/ClaudeCLISafetyTests && /tmp/ClaudeCLISafetyTests
 swiftc Sources/EnglishCoach/WordCarouselStore.swift Tests/WordCarouselStoreTests/main.swift -o /tmp/WordCarouselStoreTests && /tmp/WordCarouselStoreTests
 swiftc Sources/EnglishCoach/DailyWordProgress.swift Tests/DailyWordProgressTests/main.swift -o /tmp/DailyWordProgressTests && /tmp/DailyWordProgressTests
+swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.swift Tests/TodoCarryOverTests/main.swift -o /tmp/TodoCarryOverTests && /tmp/TodoCarryOverTests
+swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/LegacyTodoDecoder.swift Tests/TodoMigrationMappingTests/main.swift -o /tmp/TodoMigrationMappingTests && /tmp/TodoMigrationMappingTests
+swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.swift Sources/EnglishCoach/LegacyTodoDecoder.swift Sources/EnglishCoach/TodoStore.swift Tests/TodoStoreCRUDTests/main.swift -lsqlite3 -o /tmp/TodoStoreCRUDTests && /tmp/TodoStoreCRUDTests
 ```

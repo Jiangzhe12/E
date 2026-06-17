@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+/// One row in the desktop-pet "today's todos" bubble.
+struct DesktopPetTodoRow: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let dueLabel: String?
+}
+
 enum DesktopPetBubble {
     case none
     case actionMenu
@@ -10,6 +17,7 @@ enum DesktopPetBubble {
     case dailyWordMeaning(DesktopWordCard)
     case dailyWordCompletion(message: String)
     case feedback(title: String, message: String)
+    case todoList(rows: [DesktopPetTodoRow], openCount: Int)
 }
 
 enum DesktopPetMood {
@@ -55,6 +63,8 @@ final class DesktopPetPresentationState: ObservableObject {
             return .success
         case .feedback:
             return .success
+        case .todoList:
+            return .learning
         }
     }
 
@@ -101,6 +111,11 @@ final class DesktopPetPresentationState: ObservableObject {
         bubbleID = UUID()
     }
 
+    func showTodos(rows: [DesktopPetTodoRow], openCount: Int) {
+        bubble = .todoList(rows: rows, openCount: openCount)
+        bubbleID = UUID()
+    }
+
     func clearBubble() {
         bubble = .none
         bubbleID = UUID()
@@ -126,6 +141,10 @@ struct DesktopPetTranslationView: View {
     let onDailyWordPractice: (DesktopWordCard) -> Void
     let onStartNextDailyWordGroup: () -> Void
     let onSpeakDailyWord: (DesktopWordCard) -> Void
+    let onQuickAddTodo: () -> Void
+    let onShowTodos: () -> Void
+    let onCompleteTodo: (String) -> Void
+    let onOpenTodoList: () -> Void
 
     @State private var isFloating = false
     @State private var isHovering = false
@@ -216,6 +235,8 @@ struct DesktopPetTranslationView: View {
                     onShowLastTranslation: onShowLastTranslation,
                     onOpenMainWindow: onOpenMainWindow,
                     onQuitApp: onQuitApp,
+                    onQuickAddTodo: onQuickAddTodo,
+                    onShowTodos: onShowTodos,
                     onCloseBubble: onCloseBubble
                 )
                 .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
@@ -278,6 +299,17 @@ struct DesktopPetTranslationView: View {
                     message: message,
                     tailOffset: bubbleTailOffset,
                     tailPosition: bubbleTailPosition,
+                    onCloseBubble: onCloseBubble
+                )
+                .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+            case let .todoList(rows, openCount):
+                DesktopPetTodoListBubbleView(
+                    rows: rows,
+                    openCount: openCount,
+                    tailOffset: bubbleTailOffset,
+                    tailPosition: bubbleTailPosition,
+                    onCompleteTodo: onCompleteTodo,
+                    onOpenList: onOpenTodoList,
                     onCloseBubble: onCloseBubble
                 )
                 .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
@@ -528,6 +560,8 @@ private struct DesktopPetActionMenuBubbleView: View {
     let onShowLastTranslation: () -> Void
     let onOpenMainWindow: () -> Void
     let onQuitApp: () -> Void
+    let onQuickAddTodo: () -> Void
+    let onShowTodos: () -> Void
     let onCloseBubble: () -> Void
 
     var body: some View {
@@ -565,6 +599,10 @@ private struct DesktopPetActionMenuBubbleView: View {
             onTranslateClipboard()
         case .dailyWord:
             onShowDailyWord()
+        case .quickAddTodo:
+            onQuickAddTodo()
+        case .showTodos:
+            onShowTodos()
         case .lastTranslation:
             onShowLastTranslation()
         case .openMainWindow:
@@ -1002,6 +1040,69 @@ private struct DesktopPetFeedbackBubbleView: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
                     .lineLimit(2)
+            }
+        }
+    }
+}
+
+private struct DesktopPetTodoListBubbleView: View {
+    let rows: [DesktopPetTodoRow]
+    let openCount: Int
+    let tailOffset: CGFloat
+    let tailPosition: DesktopPetBubbleTailPosition
+    let onCompleteTodo: (String) -> Void
+    let onOpenList: () -> Void
+    let onCloseBubble: () -> Void
+
+    var body: some View {
+        DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
+            VStack(alignment: .leading, spacing: 9) {
+                DesktopPetBubbleHeader(
+                    icon: "checklist",
+                    title: "今日待办",
+                    trailingBadge: "\(openCount) 项",
+                    onCloseBubble: onCloseBubble
+                )
+
+                ForEach(rows) { row in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.title)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                                .lineLimit(1)
+                            if let dueLabel = row.dueLabel {
+                                Text(dueLabel)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Color(red: 0.98, green: 0.80, blue: 0.55))
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 6)
+                        DesktopPetCompactButton(
+                            systemImage: "checkmark.circle.fill",
+                            visualStyle: .learn,
+                            help: "标记完成",
+                            action: { onCompleteTodo(row.id) }
+                        )
+                    }
+                }
+
+                if openCount > rows.count {
+                    Text("还有 \(openCount - rows.count) 项未显示")
+                        .font(.caption2)
+                        .foregroundStyle(Color(red: 0.62, green: 0.75, blue: 0.95))
+                }
+
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    DesktopPetCompactButton(
+                        title: "打开列表",
+                        systemImage: "macwindow",
+                        visualStyle: .primary,
+                        action: onOpenList
+                    )
+                }
             }
         }
     }
