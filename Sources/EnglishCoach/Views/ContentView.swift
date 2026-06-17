@@ -50,6 +50,10 @@ struct ContentView: View {
     @State private var isShowingHistoryDeleteConfirm: Bool = false
     @State private var didConfigureFrameAutosave: Bool = false
     @State private var isShowingShortcutHelp: Bool = false
+
+    // Display sizes that keep their design value but follow the system text-size setting.
+    @ScaledMetric(relativeTo: .largeTitle) private var dailyWordFontSize: CGFloat = 30
+    @ScaledMetric(relativeTo: .title) private var meetingPhraseFontSize: CGFloat = 22
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
@@ -532,7 +536,7 @@ struct ContentView: View {
 
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(card.word)
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .font(.system(size: dailyWordFontSize, weight: .bold, design: .rounded))
                             .foregroundStyle(AppColor.ink)
                         Button {
                             model.speak(card.word)
@@ -844,7 +848,7 @@ struct ContentView: View {
                         Divider().opacity(0.4)
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(card.english)
-                                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                                .font(.system(size: meetingPhraseFontSize, weight: .semibold, design: .rounded))
                                 .foregroundStyle(AppColor.successDeep)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button {

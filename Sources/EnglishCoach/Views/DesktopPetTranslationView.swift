@@ -221,6 +221,9 @@ struct DesktopPetTranslationView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(width: panelSize.width, height: panelSize.height, alignment: .bottom)
+        // Fixed-size floating panel: cap text scaling so very large system text
+        // sizes can't overflow the bubble (long results still scroll — see #16).
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .background(Color.clear)
         .onAppear {
             isFloating = true
