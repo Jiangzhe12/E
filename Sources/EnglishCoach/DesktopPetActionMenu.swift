@@ -91,22 +91,10 @@ struct DesktopPetActionMenuItem: Identifiable, Equatable {
             visualStyle: DesktopPetActionMenuVisualStyle(id: "aqua", accentHex: "7AEEF7", fillHex: "0E2B52", borderHex: "50E8FF")
         ),
         DesktopPetActionMenuItem(
-            action: .translateClipboard,
-            title: "翻译剪贴板",
-            systemImage: "doc.on.clipboard",
-            visualStyle: DesktopPetActionMenuVisualStyle(id: "violet", accentHex: "B39CFF", fillHex: "1A2455", borderHex: "8A7CFF")
-        ),
-        DesktopPetActionMenuItem(
             action: .dailyWord,
             title: "今日单词",
             systemImage: "text.book.closed",
             visualStyle: DesktopPetActionMenuVisualStyle(id: "mint", accentHex: "7CFFD0", fillHex: "102D3C", borderHex: "56E2BC")
-        ),
-        DesktopPetActionMenuItem(
-            action: .quickAddTodo,
-            title: "快速记待办",
-            systemImage: "plus.rectangle.on.rectangle",
-            visualStyle: DesktopPetActionMenuVisualStyle(id: "todoAdd", accentHex: "FFD08A", fillHex: "322410", borderHex: "F2B84B")
         ),
         DesktopPetActionMenuItem(
             action: .showTodos,

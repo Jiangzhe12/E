@@ -281,7 +281,8 @@ final class AppModel: ObservableObject {
             self?.addLookupToLearningFromBubble(result)
         }
         self.popoverController.onRequestQuickAddTodo = { [weak self] in
-            self?.quickAddTodoFromClipboard()
+            guard let self else { return }
+            self.popoverController.presentQuickAddTodo(model: self, near: self.bestPopoverPosition())
         }
         self.popoverController.onRequestShowTodos = { [weak self] in
             self?.showDesktopTodos()
@@ -2402,17 +2403,6 @@ extension AppModel {
     }
 
     // MARK: Desktop pet
-
-    /// Quick-add from the pet: turn the clipboard text into a todo.
-    func quickAddTodoFromClipboard() {
-        let clip = NSPasteboard.general.string(forType: .string)?.trimmed ?? ""
-        guard !clip.isEmpty else {
-            popoverController.presentFeedback(title: "剪贴板为空", message: "先复制一段文字，再记成待办")
-            return
-        }
-        addTodo(title: clip)
-        popoverController.presentFeedback(title: "已添加待办", message: clip)
-    }
 
     /// Show today's open todos in an interactive pet bubble.
     func showDesktopTodos() {

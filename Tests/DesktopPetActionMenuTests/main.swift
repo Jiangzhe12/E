@@ -8,12 +8,12 @@ let items = DesktopPetActionMenuItem.defaultItems
 
 expectEqual(
     items.map(\.title),
-    ["快速翻译", "翻译剪贴板", "今日单词", "快速记待办", "今日待办", "上次翻译", "打开主窗口", "退出"],
+    ["快速翻译", "今日单词", "今日待办", "上次翻译", "打开主窗口", "退出"],
     "desktop pet action menu should replace the menu bar popover actions"
 )
 expectEqual(
     items.map(\.systemImage),
-    ["text.magnifyingglass", "doc.on.clipboard", "text.book.closed", "plus.rectangle.on.rectangle", "checklist", "clock.arrow.circlepath", "macwindow", "power"],
+    ["text.magnifyingglass", "text.book.closed", "checklist", "clock.arrow.circlepath", "macwindow", "power"],
     "desktop pet action menu should expose stable icons"
 )
 
