@@ -12,7 +12,7 @@ import Foundation
 struct TranslateIntent: AppIntent {
     static let title: LocalizedStringResource = "翻译英文"
     static let description = IntentDescription(
-        "用 EnglishCoach 把英文翻译成中文，返回结果字符串。可以拼接在其它 Shortcut 动作之间。"
+        "用 Nova 把英文翻译成中文，返回结果字符串。可以拼接在其它 Shortcut 动作之间。"
     )
 
     /// Most Shortcut uses just want the translated text back — no need to
@@ -39,7 +39,7 @@ struct TranslateIntent: AppIntent {
 /// Registers spoken phrases and a Shortcuts.app tile for `TranslateIntent`.
 /// The `applicationName` placeholder gets replaced with whatever CFBundleName
 /// resolves to at runtime.
-struct EnglishCoachAppShortcuts: AppShortcutsProvider {
+struct NovaAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: TranslateIntent(),

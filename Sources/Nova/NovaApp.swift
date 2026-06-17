@@ -2,12 +2,12 @@ import AppKit
 import SwiftUI
 
 @main
-struct EnglishCoachApp: App {
+struct NovaApp: App {
     @StateObject private var model = AppModel()
     private let iconManager = AppIconManager()
 
     var body: some Scene {
-        WindowGroup("English Coach") {
+        WindowGroup("Nova") {
             ContentView(model: model)
                 .onAppear {
                     model.refreshDailyCompletionState()

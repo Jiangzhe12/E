@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Registered via `NSApp.servicesProvider = ...` on launch. The system calls
 /// `translateText:userData:error:` (selector name fixed by `NSMessage` in
-/// Info.plist) whenever the user picks "用 EnglishCoach 翻译" from the Services
+/// Info.plist) whenever the user picks "用 Nova 翻译" from the Services
 /// menu in any app — no Accessibility permission required.
 @MainActor
 final class ServicesProvider: NSObject {

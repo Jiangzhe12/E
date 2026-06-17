@@ -591,7 +591,7 @@ private struct DesktopPetActionMenuBubbleView: View {
             VStack(alignment: .leading, spacing: 10) {
                 DesktopPetBubbleHeader(
                     icon: "sparkles",
-                    title: "EnglishCoach",
+                    title: "Nova",
                     onCloseBubble: onCloseBubble
                 )
 

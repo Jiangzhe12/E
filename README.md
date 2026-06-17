@@ -8,11 +8,6 @@
 - ✅ **管待办**（快速记 · 详细新建 · 状态流转 · 跨天顺延 · 周报）
 - 🐾 **桌宠陪伴**（随「今日是否完成」切换 Dock 图标并发光，气泡提醒、右键速记）
 
-> **命名迁移说明**：`Nova` 是新的产品名。项目内部代号暂时仍为 `EnglishCoach`
-> ——可执行 target、`.app` 包名、`/tmp` 临时目录、以及数据目录
-> `~/Library/Application Support/EnglishCoach/` 都还沿用旧名。下文构建命令与路径
-> 因此保留 `EnglishCoach` 字样（与当前代码一致）。统一改名为 `Nova` 会作为下一步完成。
-
 ---
 
 ## 功能特性
@@ -65,7 +60,7 @@
 
 ```bash
 ./scripts/build_app.sh
-open /Applications/EnglishCoach.app
+open /Applications/Nova.app
 ```
 
 说明：
@@ -76,7 +71,7 @@ open /Applications/EnglishCoach.app
   - `Resources/AppIcon-completed-glow-1024.png`
 - 会自动打包 `AppIconPending.icns` / `AppIconCompleted.icns` / `AppIconCompletedGlow.icns`
 - App 运行时会根据「今天兴趣学习是否完成」自动切换 Dock 图标，完成时播放一次短脉冲动画
-- 构建产物生成到 `dist/EnglishCoach.app`，脚本会自动替换 `/Applications/EnglishCoach.app`，推荐直接从 `/Applications` 启动最新版
+- 构建产物生成到 `dist/Nova.app`，脚本会自动替换 `/Applications/Nova.app`，推荐直接从 `/Applications` 启动最新版
 
 #### 自定义 App 图标
 
@@ -101,7 +96,7 @@ swift build --disable-sandbox
 2. 启动：
 
 ```bash
-./.build/arm64-apple-macosx/debug/EnglishCoach
+./.build/arm64-apple-macosx/debug/Nova
 ```
 
 ---
@@ -112,7 +107,7 @@ swift build --disable-sandbox
 
 1. 英文单词 / 短语优先查本地 `ECDICT`，不联网，速度最快。
 2. 句子或本地词典未命中内容，根据设置选择：
-   - **本地 Claude CLI（安全隔离）**：使用本机已登录的 Claude Code，无需 API Key；调用时禁用 Claude Code 工具、禁用会话持久化、忽略 MCP 配置，并在 `/tmp/EnglishCoachClaudeCLI` 临时空目录运行，避免访问项目文件。
+   - **本地 Claude CLI（安全隔离）**：使用本机已登录的 Claude Code，无需 API Key；调用时禁用 Claude Code 工具、禁用会话持久化、忽略 MCP 配置，并在 `/tmp/NovaClaudeCLI` 临时空目录运行，避免访问项目文件。
    - **Claude API Key**：使用 Anthropic API，速度和稳定性通常优于 CLI，但需要配置 API Key。
    - **仅免费（MyMemory）**：不调用 Claude，质量一般，作为免费兜底。
 3. Claude 调用失败时回退到 MyMemory，并在结果里提示来源。
@@ -134,7 +129,7 @@ swift build --disable-sandbox
 SQLite 文件：
 
 ```text
-~/Library/Application Support/EnglishCoach/english_coach.sqlite3
+~/Library/Application Support/Nova/english_coach.sqlite3
 ```
 
 ---
@@ -145,16 +140,16 @@ SQLite 文件：
 
 ```bash
 swift build --disable-sandbox
-swiftc Sources/EnglishCoach/Models.swift Sources/EnglishCoach/MeetingPhraseBank.swift Sources/EnglishCoach/ProductionDrill.swift Sources/EnglishCoach/ClaudeTranslationProvider.swift Sources/EnglishCoach/ClaudeCLITranslationProvider.swift Tests/ClaudeCLISafetyTests/main.swift -o /tmp/ClaudeCLISafetyTests && /tmp/ClaudeCLISafetyTests
-swiftc Sources/EnglishCoach/WordCarouselStore.swift Tests/WordCarouselStoreTests/main.swift -o /tmp/WordCarouselStoreTests && /tmp/WordCarouselStoreTests
-swiftc Sources/EnglishCoach/DailyWordProgress.swift Tests/DailyWordProgressTests/main.swift -o /tmp/DailyWordProgressTests && /tmp/DailyWordProgressTests
-swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.swift Tests/TodoCarryOverTests/main.swift -o /tmp/TodoCarryOverTests && /tmp/TodoCarryOverTests
-swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/LegacyTodoDecoder.swift Tests/TodoMigrationMappingTests/main.swift -o /tmp/TodoMigrationMappingTests && /tmp/TodoMigrationMappingTests
-swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoCarryOver.swift Sources/EnglishCoach/LegacyTodoDecoder.swift Sources/EnglishCoach/TodoStore.swift Tests/TodoStoreCRUDTests/main.swift -lsqlite3 -o /tmp/TodoStoreCRUDTests && /tmp/TodoStoreCRUDTests
-swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoFilter.swift Tests/TodoFilterSortTests/main.swift -o /tmp/TodoFilterSortTests && /tmp/TodoFilterSortTests
-swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/TodoStats.swift Tests/TodoStatsTests/main.swift -o /tmp/TodoStatsTests && /tmp/TodoStatsTests
-swiftc Sources/EnglishCoach/TodoModels.swift Sources/EnglishCoach/WeeklyReport.swift Tests/WeeklyReportTests/main.swift -o /tmp/WeeklyReportTests && /tmp/WeeklyReportTests
-swiftc Sources/EnglishCoach/TodoModels.swift Tests/TodoTemplateTests/main.swift -o /tmp/TodoTemplateTests && /tmp/TodoTemplateTests
+swiftc Sources/Nova/Models.swift Sources/Nova/MeetingPhraseBank.swift Sources/Nova/ProductionDrill.swift Sources/Nova/ClaudeTranslationProvider.swift Sources/Nova/ClaudeCLITranslationProvider.swift Tests/ClaudeCLISafetyTests/main.swift -o /tmp/ClaudeCLISafetyTests && /tmp/ClaudeCLISafetyTests
+swiftc Sources/Nova/WordCarouselStore.swift Tests/WordCarouselStoreTests/main.swift -o /tmp/WordCarouselStoreTests && /tmp/WordCarouselStoreTests
+swiftc Sources/Nova/DailyWordProgress.swift Tests/DailyWordProgressTests/main.swift -o /tmp/DailyWordProgressTests && /tmp/DailyWordProgressTests
+swiftc Sources/Nova/TodoModels.swift Sources/Nova/TodoCarryOver.swift Tests/TodoCarryOverTests/main.swift -o /tmp/TodoCarryOverTests && /tmp/TodoCarryOverTests
+swiftc Sources/Nova/TodoModels.swift Sources/Nova/LegacyTodoDecoder.swift Tests/TodoMigrationMappingTests/main.swift -o /tmp/TodoMigrationMappingTests && /tmp/TodoMigrationMappingTests
+swiftc Sources/Nova/TodoModels.swift Sources/Nova/TodoCarryOver.swift Sources/Nova/LegacyTodoDecoder.swift Sources/Nova/TodoStore.swift Tests/TodoStoreCRUDTests/main.swift -lsqlite3 -o /tmp/TodoStoreCRUDTests && /tmp/TodoStoreCRUDTests
+swiftc Sources/Nova/TodoModels.swift Sources/Nova/TodoFilter.swift Tests/TodoFilterSortTests/main.swift -o /tmp/TodoFilterSortTests && /tmp/TodoFilterSortTests
+swiftc Sources/Nova/TodoModels.swift Sources/Nova/TodoStats.swift Tests/TodoStatsTests/main.swift -o /tmp/TodoStatsTests && /tmp/TodoStatsTests
+swiftc Sources/Nova/TodoModels.swift Sources/Nova/WeeklyReport.swift Tests/WeeklyReportTests/main.swift -o /tmp/WeeklyReportTests && /tmp/WeeklyReportTests
+swiftc Sources/Nova/TodoModels.swift Tests/TodoTemplateTests/main.swift -o /tmp/TodoTemplateTests && /tmp/TodoTemplateTests
 ```
 
 ---

@@ -22,7 +22,7 @@ enum HistoryStoreError: LocalizedError {
 
 final class HistoryStore {
     private let iso8601Formatter: ISO8601DateFormatter
-    private let queue = DispatchQueue(label: "EnglishCoach.HistoryStore")
+    private let queue = DispatchQueue(label: "Nova.HistoryStore")
     private var db: OpaquePointer?
 
     init(databaseURL: URL? = nil) throws {
@@ -185,16 +185,7 @@ final class HistoryStore {
     }
 
     private static func defaultDatabaseURL() throws -> URL {
-        let fileManager = FileManager.default
-        let appSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let folder = appSupport.appendingPathComponent("EnglishCoach", isDirectory: true)
-        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("english_coach.sqlite3", isDirectory: false)
+        try AppSupport.databaseURL()
     }
 
     private func openDatabase(at url: URL) throws {

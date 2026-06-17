@@ -3,16 +3,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "EnglishCoach",
+    name: "Nova",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "EnglishCoach", targets: ["EnglishCoach"])
+        .executable(name: "Nova", targets: ["Nova"])
     ],
     targets: [
         .executableTarget(
-            name: "EnglishCoach",
+            name: "Nova",
             linkerSettings: [
                 .linkedLibrary("sqlite3")
             ]

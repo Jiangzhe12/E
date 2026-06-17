@@ -130,7 +130,7 @@ struct ClaudeCLITranslationProvider {
 
     static func isolatedWorkingDirectory() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("EnglishCoachClaudeCLI", isDirectory: true)
+            .appendingPathComponent("NovaClaudeCLI", isDirectory: true)
     }
 
     private static func shellSingleQuote(_ value: String) -> String {

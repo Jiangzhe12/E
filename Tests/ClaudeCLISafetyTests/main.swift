@@ -28,7 +28,7 @@ expect(
     "CLI translation should run from an isolated temporary directory"
 )
 expect(
-    workingDirectory.lastPathComponent == "EnglishCoachClaudeCLI",
+    workingDirectory.lastPathComponent == "NovaClaudeCLI",
     "CLI translation should use a dedicated empty working directory"
 )
 

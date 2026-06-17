@@ -81,7 +81,7 @@ struct ContentView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
             if !didConfigureFrameAutosave,
-               let window = NSApp.windows.first(where: { $0.title == "English Coach" }) {
+               let window = NSApp.windows.first(where: { $0.title == "Nova" }) {
                 window.setFrameAutosaveName("EnglishCoach.MainWindow")
                 didConfigureFrameAutosave = true
             }

@@ -1163,7 +1163,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Called from `ServicesProvider` when the user picks "用 EnglishCoach 翻译"
+    /// Called from `ServicesProvider` when the user picks "用 Nova 翻译"
     /// in the system Services menu. The source app is hard to identify from
     /// outside the process, so we tag it generically as "Services 菜单".
     func translateFromServicesMenu(text: String) {
@@ -1312,7 +1312,7 @@ final class AppModel: ObservableObject {
             } else {
                 reminderEnabled = false
                 defaults.set(false, forKey: Self.reminderEnabledKey)
-                statusMessage = "通知权限未授予，请在 系统设置 -> 通知 中允许 English Coach 发送通知"
+                statusMessage = "通知权限未授予，请在 系统设置 -> 通知 中允许 Nova 发送通知"
             }
         } else {
             reminderEnabled = false
@@ -1581,7 +1581,7 @@ final class AppModel: ObservableObject {
     private static func primaryWindow() -> NSWindow? {
         // Utility popovers are NSWindows too; filter to windows that look like
         // real document/content windows.
-        for window in NSApp.windows where window.canBecomeMain && window.title == "English Coach" {
+        for window in NSApp.windows where window.canBecomeMain && window.title == "Nova" {
             return window
         }
         for window in NSApp.windows where window.canBecomeMain && !window.title.isEmpty {

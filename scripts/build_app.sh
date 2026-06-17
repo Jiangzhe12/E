@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_NAME="EnglishCoach"
+APP_NAME="Nova"
 BUILD_DIR="$ROOT_DIR/.build/arm64-apple-macosx/release"
 APP_DIR="$ROOT_DIR/dist/${APP_NAME}.app"
 
@@ -147,16 +147,16 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSAccessibilityUsageDescription</key>
-  <string>EnglishCoach 需要辅助功能权限来读取你在其他 App 中选中的文本，以便连续复制两次（⌘C⌘C）时直接翻译。</string>
+  <string>Nova 需要辅助功能权限来读取你在其他 App 中选中的文本，以便连续复制两次（⌘C⌘C）时直接翻译。</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>EnglishCoach 在你执行双复制时读取剪贴板内容以完成翻译。</string>
+  <string>Nova 在你执行双复制时读取剪贴板内容以完成翻译。</string>
   <key>NSServices</key>
   <array>
     <dict>
       <key>NSMenuItem</key>
       <dict>
         <key>default</key>
-        <string>用 EnglishCoach 翻译</string>
+        <string>用 Nova 翻译</string>
       </dict>
       <key>NSMessage</key>
       <string>translateText</string>

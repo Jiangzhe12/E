@@ -41,7 +41,7 @@ final class ReminderScheduler {
         components.minute = minute
 
         let content = UNMutableNotificationContent()
-        content.title = "English Coach"
+        content.title = "Nova"
         content.body = "今天还没完成英语学习 · 20 词和兴趣学习等你"
         content.sound = .default
 
@@ -154,7 +154,7 @@ final class ReminderScheduler {
         tomorrowComponents.minute = minute
 
         let content = UNMutableNotificationContent()
-        content.title = "English Coach"
+        content.title = "Nova"
         content.body = "今天还没完成英语学习 · 20 词和兴趣学习等你"
         content.sound = .default
 
