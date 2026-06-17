@@ -476,11 +476,11 @@ private struct DesktopPetTranslationBubbleView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 7) {
                     Image(systemName: "bubble.left.and.text.bubble.right.fill")
-                        .foregroundStyle(Color(red: 0.42, green: 0.94, blue: 1.0))
+                        .foregroundStyle(PetPalette.cyan)
 
                     Text(content.metadata)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.58, green: 0.96, blue: 1.0))
+                        .foregroundStyle(PetPalette.cyanSoft)
                         .lineLimit(1)
 
                     Spacer(minLength: 8)
@@ -490,27 +490,28 @@ private struct DesktopPetTranslationBubbleView: View {
                             .font(.caption.weight(.bold))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color(red: 0.64, green: 0.78, blue: 0.95))
+                    .foregroundStyle(PetPalette.close)
                     .help("关闭气泡")
+                    .accessibilityLabel("关闭气泡")
                     .bubbleClickableHover()
                 }
 
                 Text(content.originalText)
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.62, green: 0.75, blue: 0.95))
+                    .foregroundStyle(PetPalette.subtitle)
                     .lineLimit(1)
 
                 Text(content.translatedText)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
-                    .lineLimit(3)
+                    .foregroundStyle(PetPalette.ink)
+                    .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
 
                 if let phonetic = content.phonetic {
                     Text(phonetic)
                         .font(.caption.monospaced())
-                        .foregroundStyle(Color(red: 0.65, green: 0.55, blue: 1.0))
+                        .foregroundStyle(PetPalette.violet)
                         .lineLimit(1)
                 }
 
@@ -519,8 +520,8 @@ private struct DesktopPetTranslationBubbleView: View {
                         ForEach(Array(content.explanationBullets.enumerated()), id: \.offset) { _, explanation in
                             Text("· \(explanation)")
                                 .font(.caption)
-                                .foregroundStyle(Color(red: 0.72, green: 0.82, blue: 0.98))
-                                .lineLimit(2)
+                                .foregroundStyle(PetPalette.bullet)
+                                .lineLimit(3)
                         }
                     }
                 }
@@ -669,7 +670,7 @@ private struct DesktopPetActionMenuButton: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(item.action == .quit
                         ? Color(red: 1.0, green: 0.83, blue: 0.84)
-                        : Color(red: 0.90, green: 0.99, blue: 1.0))
+                        : PetPalette.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
 
@@ -683,7 +684,7 @@ private struct DesktopPetActionMenuButton: View {
                         LinearGradient(
                             colors: [
                                 style.fillColor.opacity(isHovering ? 0.96 : 0.80),
-                                Color(red: 0.04, green: 0.08, blue: 0.24).opacity(0.88)
+                                PetPalette.bgTop.opacity(0.88)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -740,7 +741,7 @@ private struct DesktopPetCompactButton: View {
                 if let title {
                     Text(title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.92, green: 0.99, blue: 1.0))
+                        .foregroundStyle(PetPalette.inkBright)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                 }
@@ -753,7 +754,7 @@ private struct DesktopPetCompactButton: View {
                         LinearGradient(
                             colors: [
                                 visualStyle.fillColor.opacity(isHovering ? 0.98 : 0.84),
-                                Color(red: 0.04, green: 0.08, blue: 0.24).opacity(0.88)
+                                PetPalette.bgTop.opacity(0.88)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -769,6 +770,7 @@ private struct DesktopPetCompactButton: View {
         }
         .buttonStyle(DesktopPetCompactButtonPressStyle(isHovering: isHovering))
         .help(help ?? title ?? "")
+        .accessibilityLabel(help ?? title ?? "")
         .onHover { hovering in
             isHovering = hovering
             if hovering {
@@ -849,21 +851,21 @@ private struct DesktopPetTranslatingBubbleView: View {
 
                 Text(text)
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.62, green: 0.75, blue: 0.95))
+                    .foregroundStyle(PetPalette.subtitle)
                     .lineLimit(1)
 
                 HStack(spacing: 7) {
                     ForEach(0..<3, id: \.self) { index in
                         Rectangle()
                             .fill(index == 1
-                                ? Color(red: 0.62, green: 0.46, blue: 1.0)
-                                : Color(red: 0.42, green: 0.94, blue: 1.0)
+                                ? PetPalette.violetDeep
+                                : PetPalette.cyan
                             )
                             .frame(width: 8, height: 8)
                     }
                     Text("正在解析选中文本")
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                        .foregroundStyle(PetPalette.ink)
                 }
             }
         }
@@ -890,14 +892,14 @@ private struct DesktopPetDailyWordInviteBubbleView: View {
 
                 Text(card.word)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                    .foregroundStyle(PetPalette.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
 
                 if let phonetic = card.phonetic, !phonetic.isEmpty {
                     Text(phonetic)
                         .font(.caption.monospaced())
-                        .foregroundStyle(Color(red: 0.65, green: 0.55, blue: 1.0))
+                        .foregroundStyle(PetPalette.violet)
                         .lineLimit(1)
                 }
 
@@ -947,24 +949,24 @@ private struct DesktopPetDailyWordMeaningBubbleView: View {
                 if let phonetic = card.phonetic, !phonetic.isEmpty {
                     Text(phonetic)
                         .font(.caption.monospaced())
-                        .foregroundStyle(Color(red: 0.65, green: 0.55, blue: 1.0))
+                        .foregroundStyle(PetPalette.violet)
                         .lineLimit(1)
                 }
 
                 Text(card.meaning)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                    .foregroundStyle(PetPalette.ink)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(card.explanation)
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.72, green: 0.82, blue: 0.98))
+                    .foregroundStyle(PetPalette.bullet)
                     .lineLimit(2)
 
                 Text(card.example)
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.62, green: 0.75, blue: 0.95))
+                    .foregroundStyle(PetPalette.subtitle)
                     .lineLimit(2)
 
                 HStack(spacing: 8) {
@@ -1012,7 +1014,7 @@ private struct DesktopPetDailyWordCompletionBubbleView: View {
 
                 Text(message)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                    .foregroundStyle(PetPalette.ink)
                     .lineLimit(3)
 
                 HStack(spacing: 8) {
@@ -1055,7 +1057,7 @@ private struct DesktopPetFeedbackBubbleView: View {
 
                 Text(message)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                    .foregroundStyle(PetPalette.ink)
                     .lineLimit(2)
             }
         }
@@ -1086,7 +1088,7 @@ private struct DesktopPetTodoListBubbleView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(row.title)
                                 .font(.callout.weight(.semibold))
-                                .foregroundStyle(Color(red: 0.90, green: 0.99, blue: 1.0))
+                                .foregroundStyle(PetPalette.ink)
                                 .lineLimit(1)
                             if let dueLabel = row.dueLabel {
                                 Text(dueLabel)
@@ -1108,7 +1110,7 @@ private struct DesktopPetTodoListBubbleView: View {
                 if openCount > rows.count {
                     Text("还有 \(openCount - rows.count) 项未显示")
                         .font(.caption2)
-                        .foregroundStyle(Color(red: 0.62, green: 0.75, blue: 0.95))
+                        .foregroundStyle(PetPalette.subtitle)
                 }
 
                 HStack(spacing: 8) {
@@ -1149,9 +1151,9 @@ private struct DesktopPetTodoFormBubbleView: View {
         return todoDayKey(for: calendar.date(byAdding: .day, value: add, to: today) ?? today)
     }
 
-    private let lightText = Color(red: 0.92, green: 0.99, blue: 1.0)
-    private let subText = Color(red: 0.72, green: 0.82, blue: 0.98)
-    private let accent = Color(red: 0.42, green: 0.94, blue: 1.0)
+    private let lightText = PetPalette.inkBright
+    private let subText = PetPalette.bullet
+    private let accent = PetPalette.cyan
 
     var body: some View {
         DesktopPetBubbleShell(tailOffset: tailOffset, tailPosition: tailPosition) {
@@ -1182,6 +1184,7 @@ private struct DesktopPetTodoFormBubbleView: View {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(subText)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("清除截止日期")
                     }
                 }
 
@@ -1217,7 +1220,7 @@ private struct DesktopPetTodoFormBubbleView: View {
             .foregroundStyle(lightText)
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(red: 0.04, green: 0.09, blue: 0.26).opacity(0.92)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PetPalette.bgMid.opacity(0.92)))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(accent.opacity(0.30), lineWidth: 1))
     }
 
@@ -1285,11 +1288,11 @@ private struct DesktopPetBubbleHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: 7) {
             Image(systemName: icon)
-                .foregroundStyle(Color(red: 0.42, green: 0.94, blue: 1.0))
+                .foregroundStyle(PetPalette.cyan)
 
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(red: 0.58, green: 0.96, blue: 1.0))
+                .foregroundStyle(PetPalette.cyanSoft)
                 .lineLimit(1)
 
             Spacer(minLength: 8)
@@ -1311,8 +1314,9 @@ private struct DesktopPetBubbleHeader: View {
                     .font(.caption.weight(.bold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color(red: 0.64, green: 0.78, blue: 0.95))
+            .foregroundStyle(PetPalette.close)
             .help("关闭气泡")
+            .accessibilityLabel("关闭气泡")
             .bubbleClickableHover()
         }
     }
@@ -1348,7 +1352,7 @@ private struct DesktopPetBubbleShell<Content: View>: View {
 
     private var bubbleTail: some View {
         SpeechBubbleTail()
-            .fill(Color(red: 0.04, green: 0.09, blue: 0.26).opacity(0.98))
+            .fill(PetPalette.bgMid.opacity(0.98))
             .frame(width: 28, height: 18)
     }
 }
@@ -1359,7 +1363,7 @@ private struct PixelGlassBubbleBackground: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color(red: 0.03, green: 0.07, blue: 0.21).opacity(0.98),
+                        PetPalette.bgDeep.opacity(0.98),
                         Color(red: 0.06, green: 0.11, blue: 0.34).opacity(0.98)
                     ],
                     startPoint: .topLeading,
@@ -1376,7 +1380,7 @@ private struct PixelGlassBubbleBackground: View {
                         .fill(Color(red: 0.68, green: 0.99, blue: 1.0).opacity(0.75))
                         .frame(width: 18, height: 3)
                     Rectangle()
-                        .fill(Color(red: 0.62, green: 0.46, blue: 1.0).opacity(0.65))
+                        .fill(PetPalette.violetDeep.opacity(0.65))
                         .frame(width: 8, height: 3)
                 }
                 .padding(.top, 8)
@@ -1583,8 +1587,8 @@ private struct DesktopPetLoadingDotsView: View {
             ForEach(0..<3, id: \.self) { index in
                 Rectangle()
                     .fill(index == 1
-                        ? Color(red: 0.62, green: 0.46, blue: 1.0)
-                        : Color(red: 0.42, green: 0.94, blue: 1.0)
+                        ? PetPalette.violetDeep
+                        : PetPalette.cyan
                     )
                     .frame(width: 6, height: 6)
                     .scaleEffect(pulse ? 1.14 : 0.72)
@@ -1600,7 +1604,7 @@ private struct DesktopPetLoadingDotsView: View {
         .padding(5)
         .background(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color(red: 0.03, green: 0.07, blue: 0.21).opacity(0.82))
+                .fill(PetPalette.bgDeep.opacity(0.82))
         )
         .onAppear {
             pulse = true

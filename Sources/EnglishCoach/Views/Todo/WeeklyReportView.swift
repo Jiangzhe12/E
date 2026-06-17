@@ -47,6 +47,7 @@ struct WeeklyReportView: View {
         HStack {
             Button { model.weeklyReportOffset -= 1 } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("上一周")
             Spacer()
             Text("\(report.weekStart) - \(report.weekEnd)")
                 .font(.headline)
@@ -55,6 +56,7 @@ struct WeeklyReportView: View {
             Button { model.weeklyReportOffset += 1 } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.borderless)
                 .disabled(model.weeklyReportOffset >= 0)
+                .accessibilityLabel("下一周")
         }
     }
 
@@ -109,7 +111,7 @@ struct WeeklyReportView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.7)))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.glass(0.7)))
     }
 
     @ViewBuilder

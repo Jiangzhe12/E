@@ -640,10 +640,10 @@ struct QuickTranslatePopoverView: View {
             // Header
             HStack {
                 Image(systemName: "text.magnifyingglass")
-                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                    .foregroundStyle(AppColor.subtitle)
                 Text("快速翻译")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Picker("", selection: $directionChoice) {
                     ForEach(TranslationDirectionChoice.allCases) { choice in
@@ -710,7 +710,7 @@ struct QuickTranslatePopoverView: View {
 
                     Text(result.translatedText)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.10, green: 0.21, blue: 0.36))
+                        .foregroundStyle(AppColor.ink)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
 

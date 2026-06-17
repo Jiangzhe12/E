@@ -63,10 +63,10 @@ struct TodoTemplateView: View {
                 .font(.caption)
             Button { model.deleteTemplate(id: template.id) } label: { Image(systemName: "trash") }
                 .buttonStyle(.borderless)
-                .foregroundStyle(Color(red: 0.80, green: 0.30, blue: 0.30))
+                .foregroundStyle(AppColor.danger)
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.8)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.glass(0.8)))
     }
 
     private var addForm: some View {
@@ -100,6 +100,6 @@ struct TodoTemplateView: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.6)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.glass(0.6)))
     }
 }

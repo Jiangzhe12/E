@@ -45,7 +45,7 @@ struct TodoFilterBar: View {
                     ForEach(model.customTags, id: \.self) { tag in
                         TodoPill(
                             title: "#\(tag)",
-                            color: Color(red: 0.40, green: 0.45, blue: 0.60),
+                            color: AppColor.subtitle,
                             isActive: model.todoFilterTag == tag
                         ) {
                             model.todoFilterTag = model.todoFilterTag == tag ? "" : tag
@@ -67,7 +67,7 @@ struct TodoPill: View {
         Button(action: action) {
             Text(title)
                 .font(.caption.weight(isActive ? .semibold : .regular))
-                .foregroundStyle(isActive ? .white : color)
+                .foregroundStyle(isActive ? AppColor.onAccent : color)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(

@@ -9,18 +9,27 @@ extension Color {
 
 enum TodoPalette {
     /// Shared card title blue, matching the other detail cards.
-    static let title = Color(red: 0.13, green: 0.30, blue: 0.50)
-    static let orange = Color(red: 0.84, green: 0.45, blue: 0.18)
+    static let title = AppColor.title
+    static let orange = AppColor.warning
 
     static func category(_ category: TodoCategory) -> Color {
-        Color(todoRGB: category.rgb)
+        // Light = the model's brand RGB; dark = a brightened variant so the color stays
+        // legible as text / chips on dark cards (the raw RGB is tuned for light backgrounds).
+        let light = Color(todoRGB: category.rgb)
+        let dark: Color
+        switch category {
+        case .feature: dark = Color(red: 0.45, green: 0.66, blue: 1.0)
+        case .bug: dark = Color(red: 1.0, green: 0.45, blue: 0.45)
+        case .optimization: dark = Color(red: 0.30, green: 0.82, blue: 0.74)
+        }
+        return Color(light: light, dark: dark)
     }
 
     static func status(_ status: TodoStatus) -> Color {
         switch status {
         case .pending: return Color.secondary
-        case .inProgress: return Color(red: 0.231, green: 0.510, blue: 0.965)
-        case .done: return Color(red: 0.133, green: 0.773, blue: 0.369)
+        case .inProgress: return AppColor.accent
+        case .done: return AppColor.success
         }
     }
 
@@ -32,18 +41,18 @@ enum TodoPalette {
         }
     }
 
-    /// Foreground / background colors for a due-date pill.
+    /// Foreground / background colors for a due-date pill. A red → orange → yellow → blue
+    /// ladder so the four urgency tiers read distinctly; background is the same hue at low
+    /// alpha so it adapts to light/dark automatically.
     static func due(_ kind: TodoDueKind) -> (fg: Color, bg: Color) {
+        let fg: Color
         switch kind {
-        case .overdue:
-            return (Color(red: 0.84, green: 0.45, blue: 0.18), Color(red: 1.0, green: 0.93, blue: 0.85))
-        case .today:
-            return (Color(red: 0.78, green: 0.44, blue: 0.12), Color(red: 1.0, green: 0.95, blue: 0.86))
-        case .soon:
-            return (Color(red: 0.66, green: 0.52, blue: 0.10), Color(red: 1.0, green: 0.98, blue: 0.86))
-        case .later:
-            return (Color(red: 0.22, green: 0.44, blue: 0.64), Color(red: 0.90, green: 0.95, blue: 1.0))
+        case .overdue: fg = AppColor.danger     // 逾期 → 红
+        case .today: fg = AppColor.warning       // 今天 → 橙
+        case .soon: fg = AppColor.caution        // 即将 → 黄
+        case .later: fg = AppColor.subtitle      // 以后 → 蓝（中性）
         }
+        return (fg, fg.opacity(0.16))
     }
 }
 

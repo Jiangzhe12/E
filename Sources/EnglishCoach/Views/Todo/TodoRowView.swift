@@ -30,7 +30,7 @@ struct TodoRowView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isHovering ? Color.white.opacity(0.5) : Color.clear)
+        .background(isHovering ? Color.glass(0.5) : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .contextMenu {
@@ -61,10 +61,10 @@ struct TodoRowView: View {
                     .foregroundStyle(TodoPalette.status(todo.status))
             }
             .buttonStyle(.borderless)
-            .help("切换状态（\(todo.status.next.chineseLabel)）")
+            .help("切换状态（\(todo.status.next.chineseLabel)）").accessibilityLabel("切换状态")
 
             if todo.priority == .high {
-                Circle().fill(Color(red: 0.937, green: 0.267, blue: 0.267)).frame(width: 7, height: 7)
+                Circle().fill(AppColor.danger).frame(width: 7, height: 7)
             } else if todo.priority == .low {
                 Circle().fill(Color.secondary.opacity(0.5)).frame(width: 7, height: 7)
             }
@@ -101,16 +101,20 @@ struct TodoRowView: View {
                 .padding(.vertical, 2)
                 .background(Capsule(style: .continuous).fill(TodoPalette.category(todo.category).opacity(0.14)))
 
-            if isHovering {
+            // Always laid out (reserves space) so hovering only fades the actions in —
+            // no horizontal jitter of the due pill / category chip.
+            HStack(spacing: 6) {
                 Button { onEdit(todo) } label: { Image(systemName: "pencil") }
-                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("编辑")
+                    .buttonStyle(.borderless).foregroundStyle(.secondary).help("编辑").accessibilityLabel("编辑")
                 if isDone {
                     Button { model.archiveTodo(id: todo.id) } label: { Image(systemName: "archivebox") }
-                        .buttonStyle(.borderless).foregroundStyle(.secondary).help("归档")
+                        .buttonStyle(.borderless).foregroundStyle(.secondary).help("归档").accessibilityLabel("归档")
                 }
-                Button { model.deleteTodo(id: todo.id) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.borderless).foregroundStyle(Color(red: 0.80, green: 0.30, blue: 0.30)).help("删除")
+                Button(role: .destructive) { model.deleteTodo(id: todo.id) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless).foregroundStyle(AppColor.danger).help("删除").accessibilityLabel("删除")
             }
+            .opacity(isHovering ? 1 : 0)
+            .allowsHitTesting(isHovering)
 
             if hasDetail {
                 Button { withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() } } label: {
@@ -118,7 +122,7 @@ struct TodoRowView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tertiary)
-                .help(isExpanded ? "收起" : "展开")
+                .help(isExpanded ? "收起" : "展开").accessibilityLabel(isExpanded ? "收起" : "展开")
             }
         }
     }
@@ -130,9 +134,9 @@ struct TodoRowView: View {
                     ForEach(tags, id: \.self) { tag in
                         Text("#\(tag)")
                             .font(.caption2)
-                            .foregroundStyle(Color(red: 0.40, green: 0.45, blue: 0.60))
+                            .foregroundStyle(AppColor.subtitle)
                             .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background(Capsule().fill(Color(red: 0.90, green: 0.92, blue: 0.97)))
+                            .background(Capsule().fill(AppColor.tintBlue))
                     }
                 }
             }
@@ -200,6 +204,7 @@ struct TodoRowView: View {
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.tertiary)
+                        .accessibilityLabel("删除子任务")
                     }
                 }
             }

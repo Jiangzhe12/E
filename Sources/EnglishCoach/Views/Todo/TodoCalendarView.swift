@@ -31,6 +31,7 @@ struct TodoCalendarView: View {
         HStack {
             Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("上个月")
             Spacer()
             Text(monthTitle)
                 .font(.headline)
@@ -38,6 +39,7 @@ struct TodoCalendarView: View {
             Spacer()
             Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("下个月")
         }
     }
 
@@ -71,12 +73,15 @@ struct TodoCalendarView: View {
         let isToday = key == todoDayKey(for: Date(), calendar: calendar)
         let isSelected = key == selectedDay
 
-        return VStack(spacing: 3) {
+        return Button {
+            selectedDay = (selectedDay == key) ? nil : key
+        } label: {
+            VStack(spacing: 3) {
             Text("\(calendar.component(.day, from: date))")
                 .font(.caption.weight(isToday ? .bold : .regular))
-                .foregroundStyle(isToday ? .white : .primary)
+                .foregroundStyle(isToday ? AppColor.onAccent : .primary)
                 .frame(width: 22, height: 22)
-                .background(Circle().fill(isToday ? TodoPalette.title : Color.clear))
+                .background(Circle().fill(isToday ? AppColor.title : Color.clear))
             HStack(spacing: 2) {
                 ForEach(categories.prefix(3), id: \.self) { category in
                     Circle().fill(TodoPalette.category(category)).frame(width: 5, height: 5)
@@ -88,10 +93,13 @@ struct TodoCalendarView: View {
         .frame(height: 46)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? TodoPalette.title.opacity(0.14) : Color.white.opacity(0.45))
+                .fill(isSelected ? TodoPalette.title.opacity(0.14) : Color.glass(0.45))
         )
         .contentShape(Rectangle())
-        .onTapGesture { selectedDay = (selectedDay == key) ? nil : key }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(calendar.component(.day, from: date)) 日，\(dayTodos.count) 项待办")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     private func selectedDayList(_ key: String) -> some View {
@@ -117,7 +125,7 @@ struct TodoCalendarView: View {
                             Circle().fill(TodoPalette.category(todo.category)).frame(width: 6, height: 6)
                         }
                         .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.6)))
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.glass(0.6)))
                     }
                     .buttonStyle(.plain)
                 }

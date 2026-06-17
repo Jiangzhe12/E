@@ -57,6 +57,8 @@ struct ActivityHeatmap: View {
                     RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                         .fill(color(forLevel: level))
                         .frame(width: cellSize, height: cellSize)
+                        .help(legendLabel(forLevel: level))
+                        .accessibilityLabel(legendLabel(forLevel: level))
                 }
                 Text("多")
                     .font(.caption2)
@@ -71,6 +73,7 @@ struct ActivityHeatmap: View {
             .fill(color(forLevel: intensityLevel(for: cell.count)))
             .frame(width: cellSize, height: cellSize)
             .help("\(cell.displayDate) · \(cell.count) 次")
+            .accessibilityLabel("\(cell.displayDate)，\(cell.count) 次活动")
     }
 
     private struct DayCell {
@@ -133,11 +136,22 @@ struct ActivityHeatmap: View {
     private func color(forLevel level: Int) -> Color {
         switch level {
         case -1: return Color.clear
-        case 0: return Color(red: 0.90, green: 0.94, blue: 0.95)
-        case 1: return Color(red: 0.66, green: 0.84, blue: 0.66)
-        case 2: return Color(red: 0.35, green: 0.73, blue: 0.40)
-        case 3: return Color(red: 0.17, green: 0.56, blue: 0.28)
-        default: return Color.gray
+        case 0: return Color.secondary.opacity(0.15)            // neutral empty cell, adapts to light/dark
+        case 1: return Color(light: AppColor.success.opacity(0.35), dark: AppColor.success.opacity(0.5))
+        case 2: return AppColor.success.opacity(0.7)
+        case 3: return AppColor.success
+        default: return Color.secondary.opacity(0.15)
+        }
+    }
+
+    /// Activity-count range each legend swatch / intensity level represents.
+    private func legendLabel(forLevel level: Int) -> String {
+        switch level {
+        case 0: return "无活动"
+        case 1: return "1–2 次"
+        case 2: return "3–5 次"
+        case 3: return "6 次以上"
+        default: return ""
         }
     }
 }

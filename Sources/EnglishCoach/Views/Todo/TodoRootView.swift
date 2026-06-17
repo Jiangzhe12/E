@@ -65,14 +65,7 @@ struct TodoRootView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
         .sheet(isPresented: $isShowingAddForm) {
             TodoFormView(model: model, editing: nil) { isShowingAddForm = false }
         }
@@ -101,7 +94,7 @@ struct TodoRootView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("归档")
+            .help("归档").accessibilityLabel("归档")
             Button {
                 isShowingAddForm = true
             } label: {
@@ -124,7 +117,7 @@ struct TodoRootView: View {
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.55))
+                        .fill(Color.glass(0.55))
                 )
         }
         summaryStrip
@@ -155,11 +148,12 @@ struct TodoRootView: View {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityLabel("清除搜索")
                 }
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.7)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.glass(0.7)))
 
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { isShowingFilters.toggle() }
@@ -170,10 +164,10 @@ struct TodoRootView: View {
                     if activeFilterCount > 0 {
                         Text("\(activeFilterCount)")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppColor.onAccent)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Capsule().fill(TodoPalette.title))
+                            .background(Capsule().fill(AppColor.title))
                     }
                 }
                 .font(.caption)
@@ -188,7 +182,7 @@ struct TodoRootView: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(model.todoSortByPriority ? TodoPalette.title : .secondary)
-            .help("按优先级排序")
+            .help("按优先级排序").accessibilityLabel("按优先级排序")
         }
     }
 
@@ -236,9 +230,10 @@ struct TodoRootView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(red: 1.0, green: 0.96, blue: 0.90))
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
     }
 
@@ -257,7 +252,7 @@ struct TodoRootView: View {
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(0.6))
+                    .fill(Color.glass(0.6))
             )
         } else {
             ForEach(groups) { group in
@@ -265,7 +260,7 @@ struct TodoRootView: View {
                     HStack(spacing: 6) {
                         Text(todoGroupHeader(for: group.date, today: today))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.27, green: 0.40, blue: 0.55))
+                            .foregroundStyle(AppColor.subtitle)
                         Text("\(group.todos.count) 项")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -283,7 +278,7 @@ struct TodoRootView: View {
                     }
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white.opacity(0.80))
+                            .fill(Color.glass(0.80))
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }

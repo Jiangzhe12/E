@@ -37,95 +37,107 @@ struct TodoFormView: View {
     private var canSave: Bool { !title.trimmed.isEmpty }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(spacing: 0) {
             Text(editing == nil ? "新建待办" : "编辑待办")
                 .font(.headline)
                 .foregroundStyle(TodoPalette.title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
 
-            TextField("标题", text: $title)
-                .textFieldStyle(.roundedBorder)
-
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("分类").font(.caption).foregroundStyle(.secondary)
-                    Picker("", selection: $category) {
-                        ForEach(TodoCategory.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("优先级").font(.caption).foregroundStyle(.secondary)
-                    Picker("", selection: $priority) {
-                        ForEach(TodoPriority.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                }
-            }
-
-            Toggle(isOn: $hasDueDate) {
-                Text("设置截止日期")
-            }
-            if hasDueDate {
-                DatePicker("截止日期", selection: $dueDate, displayedComponents: .date)
-                    .datePickerStyle(.field)
-                    .labelsHidden()
-            }
-
-            if category == .bug {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Bug 详情").font(.caption).foregroundStyle(.secondary)
-                    TextField("问题原因", text: $bugCause)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    TextField("标题", text: $title)
                         .textFieldStyle(.roundedBorder)
-                    TextField("修复方案", text: $fixPlan)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("标签").font(.caption).foregroundStyle(.secondary)
-                if !tags.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(tags, id: \.self) { tag in
-                            HStack(spacing: 3) {
-                                Text("#\(tag)").font(.caption)
-                                Button { tags.removeAll { $0 == tag } } label: {
-                                    Image(systemName: "xmark").font(.system(size: 8))
-                                }
-                                .buttonStyle(.borderless)
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("分类").font(.caption).foregroundStyle(.secondary)
+                            Picker("", selection: $category) {
+                                ForEach(TodoCategory.allCases) { Text($0.title).tag($0) }
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(Color(red: 0.90, green: 0.92, blue: 0.97)))
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("优先级").font(.caption).foregroundStyle(.secondary)
+                            Picker("", selection: $priority) {
+                                ForEach(TodoPriority.allCases) { Text($0.title).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
                         }
                     }
-                }
-                TextField("输入标签后回车", text: $tagInput)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(addTag)
-                if !model.customTags.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(model.customTags.filter { !tags.contains($0) }.prefix(6), id: \.self) { tag in
-                            Button("#\(tag)") { tags.append(tag) }
-                                .buttonStyle(.borderless)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+
+                    Toggle(isOn: $hasDueDate) {
+                        Text("设置截止日期")
+                    }
+                    if hasDueDate {
+                        DatePicker("截止日期", selection: $dueDate, displayedComponents: .date)
+                            .datePickerStyle(.field)
+                            .labelsHidden()
+                    }
+
+                    if category == .bug {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Bug 详情").font(.caption).foregroundStyle(.secondary)
+                            TextField("问题原因", text: $bugCause)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("修复方案", text: $fixPlan)
+                                .textFieldStyle(.roundedBorder)
                         }
                     }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("标签").font(.caption).foregroundStyle(.secondary)
+                        if !tags.isEmpty {
+                            HStack(spacing: 6) {
+                                ForEach(tags, id: \.self) { tag in
+                                    HStack(spacing: 3) {
+                                        Text("#\(tag)").font(.caption)
+                                        Button { tags.removeAll { $0 == tag } } label: {
+                                            Image(systemName: "xmark").font(.system(size: 8))
+                                        }
+                                        .buttonStyle(.borderless)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(AppColor.tintBlue))
+                                }
+                            }
+                        }
+                        TextField("输入标签后回车", text: $tagInput)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit(addTag)
+                        if !model.customTags.isEmpty {
+                            HStack(spacing: 6) {
+                                ForEach(model.customTags.filter { !tags.contains($0) }.prefix(6), id: \.self) { tag in
+                                    Button("#\(tag)") { tags.append(tag) }
+                                        .buttonStyle(.borderless)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("备注（支持 Markdown）").font(.caption).foregroundStyle(.secondary)
+                        TextEditor(text: $note)
+                            .font(.body)
+                            .frame(minHeight: 80)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                    }
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 4)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("备注（支持 Markdown）").font(.caption).foregroundStyle(.secondary)
-                TextEditor(text: $note)
-                    .font(.body)
-                    .frame(minHeight: 80)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                    )
-            }
+            Divider()
 
             HStack {
                 Spacer()
@@ -136,9 +148,11 @@ struct TodoFormView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
-        .padding(20)
         .frame(width: 420)
+        .frame(minHeight: 380, maxHeight: 600)
     }
 
     private func addTag() {

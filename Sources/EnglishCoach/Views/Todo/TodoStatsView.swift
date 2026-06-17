@@ -40,7 +40,7 @@ struct TodoStatsView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.7))
+                .fill(Color.glass(0.7))
         )
     }
 

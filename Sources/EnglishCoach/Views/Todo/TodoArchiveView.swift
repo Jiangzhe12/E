@@ -55,12 +55,12 @@ struct TodoArchiveView: View {
                                             Image(systemName: "trash")
                                         }
                                         .buttonStyle(.borderless)
-                                        .foregroundStyle(Color(red: 0.80, green: 0.30, blue: 0.30))
+                                        .foregroundStyle(AppColor.danger)
                                     }
                                     .padding(8)
                                     .background(
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(Color.white.opacity(0.6))
+                                            .fill(Color.glass(0.6))
                                     )
                                 }
                             }

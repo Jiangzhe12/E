@@ -54,7 +54,7 @@ struct ShortcutHelpView: View {
             HStack {
                 Label("快捷键速查", systemImage: "keyboard")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Button("关闭") {
                     onClose()
@@ -73,7 +73,7 @@ struct ShortcutHelpView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(group.title)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                                .foregroundStyle(AppColor.subtitle)
                             VStack(alignment: .leading, spacing: 6) {
                                 ForEach(group.items) { item in
                                     shortcutRow(item)
@@ -91,16 +91,7 @@ struct ShortcutHelpView: View {
             }
         }
         .frame(minWidth: 440, minHeight: 460)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.97, blue: 1.0),
-                    Color(red: 0.93, green: 0.96, blue: 0.99)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(LinearGradient.appWindow)
     }
 
     @ViewBuilder
@@ -126,15 +117,15 @@ struct ShortcutHelpView: View {
     private func keyCap(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+            .foregroundStyle(AppColor.title)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(Color.white)
+                    .fill(Color(nsColor: .controlBackgroundColor))
                     .overlay(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .stroke(Color(red: 0.78, green: 0.84, blue: 0.90), lineWidth: 1)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                     )
             )
     }

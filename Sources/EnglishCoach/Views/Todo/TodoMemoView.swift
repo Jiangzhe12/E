@@ -20,10 +20,10 @@ struct TodoMemoView: View {
                 Spacer()
                 Button { insertTimestamp() } label: { Image(systemName: "clock") }
                     .buttonStyle(.borderless)
-                    .help("插入时间戳")
+                    .help("插入时间戳").accessibilityLabel("插入时间戳")
                 Button { copyAll() } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.borderless)
-                    .help("复制全部")
+                    .help("复制全部").accessibilityLabel("复制全部")
             }
 
             if isPreviewing {
@@ -33,7 +33,7 @@ struct TodoMemoView: View {
                 }
                 .frame(minHeight: 220)
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.7)))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.glass(0.7)))
             } else {
                 TextEditor(text: Binding(
                     get: { model.todoMemo },

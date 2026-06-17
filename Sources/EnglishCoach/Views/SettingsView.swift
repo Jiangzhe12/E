@@ -38,7 +38,7 @@ struct SettingsView: View {
                 case .localCLI:
                     Label("使用本机已登录的 Claude Code，无需 API Key；已禁用工具并在临时目录隔离运行。", systemImage: "terminal")
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.22, green: 0.58, blue: 0.32))
+                        .foregroundStyle(AppColor.successDeep)
                     Text("前提：这台机器已安装 Claude Code 并完成登录。句子翻译仍会比 API 慢，但不应请求访问你的项目文件。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -52,7 +52,7 @@ struct SettingsView: View {
                     } else {
                         Label("已启用 Claude API：句子和词典未收录内容都会由 Claude 翻译并附讲解。", systemImage: "sparkles")
                             .font(.caption)
-                            .foregroundStyle(Color(red: 0.22, green: 0.58, blue: 0.32))
+                            .foregroundStyle(AppColor.successDeep)
                     }
                 case .freeOnly:
                     Label("仅使用免费的 MyMemory 在线翻译，不调用 Claude。", systemImage: "info.circle")
@@ -69,11 +69,13 @@ struct SettingsView: View {
                 HStack {
                     if model.hasAccessibilityPermission {
                         Label("辅助功能权限已就绪", systemImage: "checkmark.shield.fill")
-                            .foregroundStyle(Color(red: 0.22, green: 0.58, blue: 0.32))
+                            .foregroundStyle(AppColor.successDeep)
                     } else {
                         Label("未授权辅助功能", systemImage: "lock.shield")
-                            .foregroundStyle(Color(red: 0.78, green: 0.44, blue: 0.12))
-                        Spacer()
+                            .foregroundStyle(AppColor.warning)
+                    }
+                    Spacer()
+                    if !model.hasAccessibilityPermission {
                         Button("授予辅助功能权限") {
                             model.requestAccessibilityPermission()
                         }

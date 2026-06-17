@@ -61,15 +61,7 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 960, minHeight: 640)
         .background(
-            LinearGradient(
-                colors: [
-                    Color(red: 0.92, green: 0.96, blue: 0.99),
-                    Color(red: 0.89, green: 0.95, blue: 0.99),
-                    Color(red: 0.93, green: 0.97, blue: 1.0)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            LinearGradient.appWindow
             .ignoresSafeArea()
         )
         .onChange(of: model.shouldFocusTodoTab) { _, shouldFocus in
@@ -155,7 +147,7 @@ struct ContentView: View {
             HStack {
                 Text("学习记录")
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Button {
                     Task {
@@ -165,10 +157,11 @@ struct ContentView: View {
                     Image(systemName: "arrow.clockwise")
                         .font(.callout.weight(.semibold))
                         .padding(8)
-                        .background(Color.white.opacity(0.72), in: Circle())
+                        .background(Color.glass(0.72), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .help("刷新")
+                .accessibilityLabel("刷新")
             }
 
             Picker("", selection: $model.historyTimeFilter) {
@@ -208,10 +201,10 @@ struct ContentView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.42))
+                .fill(Color.glass(0.42))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.75), lineWidth: 1)
+                        .stroke(Color.glass(0.75), lineWidth: 1)
                 )
         )
         .padding(.leading, 12)
@@ -252,24 +245,27 @@ struct ContentView: View {
     private var detailTabBar: some View {
         HStack(spacing: 2) {
             ForEach(DetailTab.allCases) { tab in
-                Label(tab.label, systemImage: tab.systemImage)
-                    .font(.callout.weight(selectedTab == tab ? .semibold : .regular))
-                    .foregroundStyle(
-                        selectedTab == tab
-                            ? Color(red: 0.13, green: 0.30, blue: 0.50)
-                            : .secondary
-                    )
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .contentShape(Rectangle())
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(selectedTab == tab ? Color.white.opacity(0.72) : Color.clear)
-                    )
-                    .hoverAffordance(cornerRadius: 8)
-                    .onTapGesture {
-                        selectedTab = tab
-                    }
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Label(tab.label, systemImage: tab.systemImage)
+                        .font(.callout.weight(selectedTab == tab ? .semibold : .regular))
+                        .foregroundStyle(
+                            selectedTab == tab
+                                ? AppColor.title
+                                : .secondary
+                        )
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(selectedTab == tab ? Color.glass(0.72) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .hoverAffordance(cornerRadius: 8)
+                .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
             }
 
             Spacer()
@@ -282,21 +278,22 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.45))
+                            .fill(Color.glass(0.45))
                     )
             }
             .buttonStyle(.plain)
             .help("设置")
+            .accessibilityLabel("设置")
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.25))
+        .background(Color.glass(0.25))
     }
 
     private var statusBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles.rectangle.stack")
-                .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                .foregroundStyle(AppColor.subtitle)
             Text(model.statusMessage)
                 .font(.callout)
                 .foregroundStyle(.primary)
@@ -305,7 +302,7 @@ struct ContentView: View {
             Spacer()
             if !model.hasAccessibilityPermission {
                 Image(systemName: "lock.shield")
-                    .foregroundStyle(Color(red: 0.78, green: 0.44, blue: 0.12))
+                    .foregroundStyle(AppColor.warning)
                     .help("辅助功能未授权 — 在 设置 (⌘,) 中配置")
             }
             if model.pendingRetry {
@@ -316,7 +313,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .tint(Color(red: 0.92, green: 0.55, blue: 0.18))
+                .tint(AppColor.warning)
                 .help("重试上一次失败的翻译")
             }
         }
@@ -325,7 +322,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.55))
+                .fill(Color.glass(0.55))
         )
     }
 
@@ -334,14 +331,14 @@ struct ContentView: View {
             HStack {
                 Label("统计总览", systemImage: "chart.bar.xaxis")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text("今日")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 10)], alignment: .leading, spacing: 10) {
                 streakChip
                 statChip(
                     title: "翻译次数",
@@ -363,9 +360,6 @@ struct ContentView: View {
                     value: "\(model.todayLearningWrongCount)",
                     systemImage: "exclamationmark.triangle"
                 )
-            }
-
-            HStack(spacing: 10) {
                 statChip(
                     title: "今日单词",
                     value: "\(model.todayWordDeckCount)",
@@ -400,7 +394,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("今日翻译内容")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.18, green: 0.34, blue: 0.53))
+                    .foregroundStyle(AppColor.title)
 
                 if model.todayTranslationItems.isEmpty {
                     Text("今天还没有翻译内容，选中句子后连续复制两次即可记录。")
@@ -411,10 +405,11 @@ struct ContentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: "dot.circle")
                                 .font(.caption2)
-                                .foregroundStyle(Color(red: 0.45, green: 0.63, blue: 0.82))
+                                .foregroundStyle(AppColor.accent)
                             Text(item.rawText)
                                 .font(.caption)
                                 .lineLimit(1)
+                                .help(item.rawText)
                             Text("→")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -422,6 +417,7 @@ struct ContentView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                                .help(item.translation)
                             Spacer(minLength: 0)
                         }
                     }
@@ -430,14 +426,7 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private var todoStatsCard: some View {
@@ -445,7 +434,7 @@ struct ContentView: View {
             HStack(alignment: .firstTextBaseline) {
                 Label("待办统计", systemImage: "checklist")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text("\(model.openTodoCount) 项待完成")
                     .font(.caption.weight(.semibold))
@@ -455,14 +444,7 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private var activityHeatmapCard: some View {
@@ -470,7 +452,7 @@ struct ContentView: View {
             HStack {
                 Label("活跃度日历", systemImage: "square.grid.3x3")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text("过去 26 周")
                     .font(.caption.weight(.semibold))
@@ -485,14 +467,7 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private var wordLearningCard: some View {
@@ -500,7 +475,7 @@ struct ContentView: View {
             HStack(alignment: .firstTextBaseline) {
                 Label("每日单词学习", systemImage: "text.book.closed")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text(model.dailyWordProgressText)
                     .font(.caption.weight(.semibold))
@@ -511,7 +486,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("今日已完成", systemImage: "checkmark.seal.fill")
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.24, green: 0.58, blue: 0.40))
+                        .foregroundStyle(AppColor.successDeep)
                     Text(DailyWordProgress.completionMessage(
                         quota: model.todayDailyWordTarget,
                         groupSize: model.dailyWordGroupSize
@@ -520,7 +495,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     Text(Self.timeUntilNextDailyBatchDescription())
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                        .foregroundStyle(AppColor.subtitle)
 
                     HStack(spacing: 10) {
                         Button {
@@ -538,10 +513,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.80))
-                )
+                .insetSurface(cornerRadius: 12)
             } else if let card = model.currentDailyWordCard {
                 let isRevealed = dailyWordRevealState.isRevealed(for: card.id)
 
@@ -549,29 +521,30 @@ struct ContentView: View {
                     if card.isReview {
                         Label("复习", systemImage: "arrow.triangle.2.circlepath")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.84, green: 0.45, blue: 0.18))
+                            .foregroundStyle(AppColor.warning)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(Color(red: 1.0, green: 0.93, blue: 0.85))
+                                    .fill(AppColor.tintOrange)
                             )
                     }
 
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(card.word)
                             .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.10, green: 0.21, blue: 0.36))
+                            .foregroundStyle(AppColor.ink)
                         Button {
                             model.speak(card.word)
                         } label: {
                             Image(systemName: "speaker.wave.2.fill")
                                 .font(.title3)
-                                .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                                .foregroundStyle(AppColor.subtitle)
                         }
                         .buttonStyle(.borderless)
                         .keyboardShortcut("p", modifiers: .command)
                         .help("朗读单词（⌘P）")
+                        .accessibilityLabel("朗读单词")
                     }
 
                     if let phonetic = card.phonetic, !phonetic.isEmpty {
@@ -593,7 +566,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                     Text("例句：\(card.example)")
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.27, green: 0.40, blue: 0.55))
+                        .foregroundStyle(AppColor.subtitle)
                         .lineLimit(3)
                     Text("词义来源：\(card.provider)")
                         .font(.caption2)
@@ -601,10 +574,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.80))
-                )
+                .insetSurface(cornerRadius: 12)
 
                 HStack(spacing: 10) {
                     Button {
@@ -626,7 +596,7 @@ struct ContentView: View {
                             Label("还记得", systemImage: "checkmark.circle")
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(Color(red: 0.30, green: 0.70, blue: 0.40))
+                        .tint(AppColor.successDeep)
                         .keyboardShortcut("r", modifiers: [])
                         .help("还记得（R）")
 
@@ -636,7 +606,7 @@ struct ContentView: View {
                             Label("忘了", systemImage: "arrow.counterclockwise.circle")
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color(red: 0.84, green: 0.45, blue: 0.18))
+                        .tint(AppColor.warning)
                         .keyboardShortcut("f", modifiers: [])
                         .help("忘了（F）")
                     } else {
@@ -654,20 +624,22 @@ struct ContentView: View {
                     Button {
                         model.showPreviousDailyWord()
                     } label: {
-                        Label("上一个", systemImage: "chevron.left")
+                        Image(systemName: "chevron.left")
                     }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.leftArrow, modifiers: [])
                     .help("上一个单词（←）")
+                    .accessibilityLabel("上一个单词")
 
                     Button {
                         model.showNextDailyWord()
                     } label: {
-                        Label("下一个", systemImage: "chevron.right")
+                        Image(systemName: "chevron.right")
                     }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.rightArrow, modifiers: [])
                     .help("下一个单词（→）")
+                    .accessibilityLabel("下一个单词")
 
                     Spacer(minLength: 0)
 
@@ -685,26 +657,16 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                     Text(Self.timeUntilNextDailyBatchDescription())
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                        .foregroundStyle(AppColor.subtitle)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.80))
-                )
+                .insetSurface(cornerRadius: 12)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     // MARK: - 学习路线（关卡进阶）
@@ -717,7 +679,7 @@ struct ContentView: View {
             HStack(alignment: .firstTextBaseline) {
                 Label("学习路线", systemImage: "map")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text("目标：开会能跟上、能开口")
                     .font(.caption.weight(.semibold))
@@ -762,32 +724,25 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private func routeStageRow(stage: Int, title: String, detail: String, isActive: Bool, isDone: Bool) -> some View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(isActive
-                          ? Color(red: 0.22, green: 0.44, blue: 0.64)
-                          : Color.white.opacity(0.9))
+                    .fill(isActive || isDone
+                          ? AppColor.title
+                          : Color.glass(0.9))
                     .frame(width: 26, height: 26)
                 if isDone {
                     Image(systemName: "checkmark")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppColor.onAccent)
                 } else {
                     Text("\(stage)")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(isActive ? .white : .secondary)
+                        .foregroundStyle(isActive ? AppColor.onAccent : .secondary)
                 }
             }
 
@@ -805,12 +760,12 @@ struct ContentView: View {
             if isActive {
                 Text("可练习")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                    .foregroundStyle(AppColor.subtitle)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(Color(red: 0.87, green: 0.94, blue: 0.99))
+                            .fill(AppColor.tintBlue)
                     )
             } else {
                 Text("待解锁")
@@ -822,7 +777,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isActive ? Color.white.opacity(0.85) : Color.white.opacity(0.5))
+                .fill(isActive ? Color.glass(0.85) : Color.glass(0.5))
         )
     }
 
@@ -834,7 +789,7 @@ struct ContentView: View {
             HStack(alignment: .firstTextBaseline) {
                 Label("关卡 1 · 会议口语句块", systemImage: "questionmark.bubble")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text(model.meetingPhraseProgressText)
                     .font(.caption.weight(.semibold))
@@ -853,23 +808,23 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Label(card.category.title, systemImage: card.category.systemImage)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                            .foregroundStyle(AppColor.subtitle)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(Color(red: 0.90, green: 0.95, blue: 1.0))
+                                    .fill(AppColor.tintBlue)
                             )
 
                         if card.isReview {
                             Label("复习", systemImage: "arrow.triangle.2.circlepath")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color(red: 0.84, green: 0.45, blue: 0.18))
+                                .foregroundStyle(AppColor.warning)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
                                 .background(
                                     Capsule(style: .continuous)
-                                        .fill(Color(red: 1.0, green: 0.93, blue: 0.85))
+                                        .fill(AppColor.tintOrange)
                                 )
                         }
                         Spacer(minLength: 0)
@@ -881,7 +836,7 @@ struct ContentView: View {
                             .foregroundStyle(.tertiary)
                         Text(card.scenario)
                             .font(.title3.weight(.medium))
-                            .foregroundStyle(Color(red: 0.10, green: 0.21, blue: 0.36))
+                            .foregroundStyle(AppColor.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -890,25 +845,26 @@ struct ContentView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(card.english)
                                 .font(.system(size: 22, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color(red: 0.12, green: 0.30, blue: 0.22))
+                                .foregroundStyle(AppColor.successDeep)
                                 .fixedSize(horizontal: false, vertical: true)
                             Button {
                                 model.speak(card.english)
                             } label: {
                                 Image(systemName: "speaker.wave.2.fill")
                                     .font(.title3)
-                                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                                    .foregroundStyle(AppColor.subtitle)
                             }
                             .buttonStyle(.borderless)
                             .keyboardShortcut("p", modifiers: .command)
                             .help("朗读句块（⌘P）")
+                            .accessibilityLabel("朗读句块")
                         }
                         Text(card.chinese)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Text("例句：\(card.example)")
                             .font(.caption)
-                            .foregroundStyle(Color(red: 0.27, green: 0.40, blue: 0.55))
+                            .foregroundStyle(AppColor.subtitle)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     } else {
@@ -919,10 +875,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.80))
-                )
+                .insetSurface(cornerRadius: 12)
 
                 HStack(spacing: 10) {
                     Button {
@@ -944,7 +897,7 @@ struct ContentView: View {
                             Label("还记得", systemImage: "checkmark.circle")
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(Color(red: 0.30, green: 0.70, blue: 0.40))
+                        .tint(AppColor.successDeep)
                         .keyboardShortcut("r", modifiers: [])
                         .help("还记得（R）")
 
@@ -954,7 +907,7 @@ struct ContentView: View {
                             Label("忘了", systemImage: "arrow.counterclockwise.circle")
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color(red: 0.84, green: 0.45, blue: 0.18))
+                        .tint(AppColor.warning)
                         .keyboardShortcut("f", modifiers: [])
                         .help("忘了（F）")
                     } else {
@@ -972,20 +925,22 @@ struct ContentView: View {
                     Button {
                         model.showPreviousMeetingPhrase()
                     } label: {
-                        Label("上一个", systemImage: "chevron.left")
+                        Image(systemName: "chevron.left")
                     }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.leftArrow, modifiers: [])
                     .help("上一个句块（←）")
+                    .accessibilityLabel("上一个句块")
 
                     Button {
                         model.showNextMeetingPhrase()
                     } label: {
-                        Label("下一个", systemImage: "chevron.right")
+                        Image(systemName: "chevron.right")
                     }
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.rightArrow, modifiers: [])
                     .help("下一个句块（→）")
+                    .accessibilityLabel("下一个句块")
 
                     Spacer(minLength: 0)
                 }
@@ -999,22 +954,12 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.80))
-                )
+                .insetSurface(cornerRadius: 12)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     /// Stage 3 of the route: Chinese→English production with AI grading. This
@@ -1025,7 +970,7 @@ struct ContentView: View {
             HStack(alignment: .firstTextBaseline) {
                 Label("关卡 3 · 中译英产出", systemImage: "pencil.and.scribble")
                     .font(.headline)
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Text("今日已练 \(model.drillsGradedToday) 句")
                     .font(.caption.weight(.semibold))
@@ -1040,12 +985,12 @@ struct ContentView: View {
             if !model.canGradeProduction {
                 Label("此关卡需要 AI 引擎。请在设置（⌘,）中选择「本地 Claude CLI」或填入 Claude API Key。", systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.78, green: 0.44, blue: 0.12))
+                    .foregroundStyle(AppColor.warning)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color(red: 1.0, green: 0.95, blue: 0.86))
+                            .fill(AppColor.tintOrange)
                     )
             }
 
@@ -1054,12 +999,12 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Label(drill.category.title, systemImage: drill.category.systemImage)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                            .foregroundStyle(AppColor.subtitle)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
                                 Capsule(style: .continuous)
-                                    .fill(Color(red: 0.90, green: 0.95, blue: 1.0))
+                                    .fill(AppColor.tintBlue)
                             )
                         Spacer(minLength: 0)
                     }
@@ -1070,7 +1015,7 @@ struct ContentView: View {
                             .foregroundStyle(.tertiary)
                         Text(drill.chinese)
                             .font(.title3.weight(.medium))
-                            .foregroundStyle(Color(red: 0.10, green: 0.21, blue: 0.36))
+                            .foregroundStyle(AppColor.ink)
                             .fixedSize(horizontal: false, vertical: true)
                         if let hint = drill.hint {
                             Text("提示：\(hint)")
@@ -1095,10 +1040,7 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.80))
-                )
+                .insetSurface(cornerRadius: 12)
 
                 HStack(spacing: 10) {
                     Button {
@@ -1114,7 +1056,7 @@ struct ContentView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color(red: 0.30, green: 0.62, blue: 0.46))
+                    .tint(AppColor.successDeep)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(model.isGradingDrill
                               || model.drillInput.trimmed.isEmpty
@@ -1136,7 +1078,7 @@ struct ContentView: View {
                 if let error = model.drillGradeError {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .font(.caption)
-                        .foregroundStyle(Color(red: 0.77, green: 0.33, blue: 0.21))
+                        .foregroundStyle(AppColor.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -1147,14 +1089,7 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.74))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.82), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     @ViewBuilder
@@ -1185,17 +1120,18 @@ struct ContentView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(grade.polished)
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(Color(red: 0.12, green: 0.30, blue: 0.22))
+                        .foregroundStyle(AppColor.successDeep)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                     Button {
                         model.speak(grade.polished)
                     } label: {
                         Image(systemName: "speaker.wave.2.fill")
-                            .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                            .foregroundStyle(AppColor.subtitle)
                     }
                     .buttonStyle(.borderless)
                     .help("朗读")
+                    .accessibilityLabel("朗读")
                 }
             }
 
@@ -1216,7 +1152,7 @@ struct ContentView: View {
             if let encouragement = grade.encouragement {
                 Text(encouragement)
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                    .foregroundStyle(AppColor.subtitle)
             }
 
             Divider().opacity(0.4)
@@ -1234,7 +1170,7 @@ struct ContentView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(red: 0.96, green: 0.99, blue: 0.97))
+                .fill(AppColor.tintGreen)
         )
     }
 
@@ -1248,9 +1184,9 @@ struct ContentView: View {
 
     private func verdictColor(_ verdict: ProductionVerdict) -> Color {
         switch verdict {
-        case .great: return Color(red: 0.24, green: 0.62, blue: 0.36)
-        case .good: return Color(red: 0.28, green: 0.52, blue: 0.74)
-        case .needsWork: return Color(red: 0.84, green: 0.52, blue: 0.18)
+        case .great: return AppColor.successDeep
+        case .good: return AppColor.accent
+        case .needsWork: return AppColor.warning
         }
     }
 
@@ -1280,7 +1216,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: systemImage)
                 .font(.caption)
-                .foregroundStyle(Color(red: 0.21, green: 0.43, blue: 0.61))
+                .foregroundStyle(AppColor.subtitle)
             Text(value)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -1288,10 +1224,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.78))
-        )
+        .insetSurface(cornerRadius: 10)
     }
 
     /// A flame-colored chip that stands out from the neutral stats — the
@@ -1301,10 +1234,10 @@ struct ContentView: View {
         return VStack(alignment: .leading, spacing: 5) {
             Label("连续", systemImage: "flame.fill")
                 .font(.caption)
-                .foregroundStyle(Color(red: 0.88, green: 0.45, blue: 0.12))
+                .foregroundStyle(AppColor.warning)
             Text("\(days) 天")
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(Color(red: 0.55, green: 0.28, blue: 0.08))
+                .foregroundStyle(AppColor.warning)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 8)
@@ -1314,8 +1247,8 @@ struct ContentView: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(red: 1.0, green: 0.93, blue: 0.82),
-                            Color(red: 1.0, green: 0.88, blue: 0.70)
+                            Color(light: Color(red: 1.0, green: 0.93, blue: 0.82), dark: Color(red: 0.30, green: 0.22, blue: 0.10)),
+                            Color(light: Color(red: 1.0, green: 0.88, blue: 0.70), dark: Color(red: 0.34, green: 0.24, blue: 0.10))
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -1420,7 +1353,7 @@ struct ContentView: View {
                     if let phonetic = item.phonetic, !phonetic.isEmpty {
                         Text(phonetic)
                             .font(.caption.monospaced())
-                            .foregroundStyle(Color(red: 0.45, green: 0.34, blue: 0.72))
+                            .foregroundStyle(AppColor.purple)
                     }
                 }
 
@@ -1506,7 +1439,7 @@ struct ContentView: View {
             HStack {
                 Text("手动输入")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Picker("", selection: $model.manualDirectionChoice) {
                     ForEach(TranslationDirectionChoice.allCases) { choice in
@@ -1532,20 +1465,13 @@ struct ContentView: View {
                     model.translateFromManualInput()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color(red: 0.57, green: 0.76, blue: 0.95))
+                .tint(AppColor.accent)
                 .disabled(model.manualInput.trimmed.isEmpty || model.isTranslating)
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.7))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private var interestLearningCard: some View {
@@ -1553,22 +1479,22 @@ struct ContentView: View {
             HStack(alignment: .center) {
                 Text("兴趣学习")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
                 Spacer()
                 Label("今日 \(model.todayLearningAttemptCount)", systemImage: "calendar")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                    .foregroundStyle(AppColor.subtitle)
                 if model.currentLessonIsReview {
                     Label("错题回刷", systemImage: "arrow.triangle.2.circlepath.circle.fill")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(red: 0.84, green: 0.41, blue: 0.15))
+                        .foregroundStyle(AppColor.warning)
                 }
                 Label("累计 \(model.completedLearningCards)", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.14, green: 0.42, blue: 0.62))
+                    .foregroundStyle(AppColor.subtitle)
                 Label("连胜 \(model.learningStreakDays) 天", systemImage: "flame.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.89, green: 0.46, blue: 0.19))
+                    .foregroundStyle(AppColor.warning)
             }
 
             HStack(spacing: 10) {
@@ -1597,12 +1523,12 @@ struct ContentView: View {
             if model.isCurrentTopicExhausted {
                 Label("当前主题题目已全部答对，正确题将不再刷新。可切换主题继续。", systemImage: "checkmark.seal.fill")
                     .font(.caption)
-                    .foregroundStyle(Color(red: 0.17, green: 0.43, blue: 0.27))
+                    .foregroundStyle(AppColor.successDeep)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .fill(Color(red: 0.89, green: 0.97, blue: 0.91))
+                            .fill(AppColor.tintGreen)
                     )
             }
 
@@ -1620,10 +1546,7 @@ struct ContentView: View {
                 .lineSpacing(4)
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.8))
-                )
+                .insetSurface(cornerRadius: 10)
                 .textSelection(.enabled)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1660,7 +1583,7 @@ struct ContentView: View {
                     model.submitLessonAnswer()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color(red: 0.44, green: 0.70, blue: 0.91))
+                .tint(AppColor.accent)
 
                 Text(model.lessonFeedbackMessage)
                     .font(.caption)
@@ -1715,43 +1638,33 @@ struct ContentView: View {
                             if !record.isCorrect {
                                 Text("正确答案：\(record.correctOption)")
                                     .font(.caption2)
-                                    .foregroundStyle(Color(red: 0.77, green: 0.33, blue: 0.21))
+                                    .foregroundStyle(AppColor.danger)
                             }
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.white.opacity(0.78))
-                        )
+                        .insetSurface(cornerRadius: 10)
                     }
                 }
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.76))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private func learningResultTag(title: String, isCorrect: Bool) -> some View {
         Text(title)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(isCorrect ? Color(red: 0.15, green: 0.47, blue: 0.28) : Color(red: 0.75, green: 0.36, blue: 0.18))
+            .foregroundStyle(isCorrect ? AppColor.successDeep : AppColor.warning)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(
                 Capsule(style: .continuous)
                     .fill(
                         isCorrect
-                            ? Color(red: 0.88, green: 0.97, blue: 0.90)
-                            : Color(red: 1.0, green: 0.92, blue: 0.86)
+                            ? AppColor.tintGreen
+                            : AppColor.tintOrange
                     )
             )
     }
@@ -1764,7 +1677,7 @@ struct ContentView: View {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .foregroundStyle(
                         isSelected
-                            ? Color(red: 0.25, green: 0.54, blue: 0.76)
+                            ? AppColor.accent
                             : Color.secondary
                     )
                 Text(title)
@@ -1778,8 +1691,8 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(
                         isSelected
-                            ? Color(red: 0.87, green: 0.94, blue: 0.99)
-                            : Color.white.opacity(0.7)
+                            ? AppColor.tintBlue
+                            : Color.glass(0.7)
                     )
             )
         }
@@ -1792,7 +1705,7 @@ struct ContentView: View {
             HStack {
                 Text("翻译结果")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color(red: 0.13, green: 0.30, blue: 0.50))
+                    .foregroundStyle(AppColor.title)
 
                 if model.isTranslating {
                     ProgressView()
@@ -1818,10 +1731,11 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "speaker.wave.2.fill")
                                 .font(.title3)
-                                .foregroundStyle(Color(red: 0.22, green: 0.44, blue: 0.64))
+                                .foregroundStyle(AppColor.subtitle)
                         }
                         .buttonStyle(.borderless)
                         .help("朗读原文")
+                        .accessibilityLabel("朗读原文")
 
                         Spacer()
 
@@ -1833,7 +1747,7 @@ struct ContentView: View {
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
-                            .tint(Color(red: 0.20, green: 0.62, blue: 0.40))
+                            .tint(AppColor.successDeep)
                             .help("把这个单词加入每日学习与复习")
                         }
                     }
@@ -1899,14 +1813,7 @@ struct ContentView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.76))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(Color.white.opacity(0.8), lineWidth: 1)
-                )
-        )
+        .cardSurface()
     }
 
     private func deleteFromFiltered(_ offsets: IndexSet) {
@@ -1940,6 +1847,9 @@ struct ContentView: View {
         .onTapGesture {
             selectedHistoryID = item.id
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { selectedHistoryID = item.id }
         .listRowInsets(EdgeInsets(top: 5, leading: 5, bottom: 5, trailing: 5))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
@@ -1969,11 +1879,13 @@ private struct HistoryRow: View {
                 Text(item.rawText)
                     .font(.headline)
                     .lineLimit(1)
+                    .help(item.rawText)
 
                 Text(item.translation)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(item.translation)
 
                 if let context = item.context, !context.isEmpty {
                     Text("“\(context)”")
@@ -1997,17 +1909,18 @@ private struct HistoryRow: View {
 
             Spacer(minLength: 4)
 
-            Button(action: onDelete) {
+            Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
                     .font(.callout.weight(.semibold))
                     .padding(8)
                     .foregroundStyle(.white)
-                    .background(Color(red: 0.63, green: 0.78, blue: 0.95), in: Circle())
+                    .background(AppColor.accent, in: Circle())
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .opacity(isHovered ? 1 : 0)
             .help("删除")
+            .accessibilityLabel("删除")
             .padding(.trailing, 4)
         }
         .padding(10)
@@ -2017,7 +1930,7 @@ private struct HistoryRow: View {
                 .fill(rowBackgroundColor)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(isSelected ? Color(red: 0.72, green: 0.86, blue: 0.98) : Color.clear, lineWidth: 1)
+                        .stroke(isSelected ? AppColor.accent : Color.clear, lineWidth: 1)
                 )
         )
         .animation(.easeOut(duration: 0.12), value: isHovered)
@@ -2027,12 +1940,12 @@ private struct HistoryRow: View {
 
     private var rowBackgroundColor: Color {
         if isSelected {
-            return Color(red: 0.88, green: 0.95, blue: 1.0)
+            return AppColor.tintBlue
         }
         if isHovered {
-            return Color(red: 0.93, green: 0.97, blue: 1.0)
+            return AppColor.tintBlue
         }
-        return Color.white.opacity(0.70)
+        return Color.glass(0.70)
     }
 }
 
