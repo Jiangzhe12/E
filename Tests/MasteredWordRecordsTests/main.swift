@@ -19,7 +19,7 @@ let store = WordCarouselStore(
     defaults: defaults,
     coreWords: ["alpha", "bravo", "charlie", "delta"],
     extendedWords: [],
-    dailyQuota: 4,
+    dailyBudgetProvider: { 4 },
     dateProvider: { currentDate },
     calendar: Calendar(identifier: .gregorian),
     stateKey: "mastered.records.test"

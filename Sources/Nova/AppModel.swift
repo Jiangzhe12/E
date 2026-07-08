@@ -3,7 +3,13 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
-    private static let dailyWordQuota = 20
+    /// Total items surfaced per day for the word deck (reviews + new words).
+    /// Reviews are prioritized up to this ceiling; new words fill the rest.
+    private static let dailyWordBudget = 40
+    /// How many new words "学习下一组" adds beyond the automatic daily plan.
+    private static let newWordGroupStep = 20
+    /// Daily ceiling for the meeting-phrase deck.
+    private static let meetingPhraseBudget = 12
 
     @Published var statusMessage: String = "在任意应用中连续按两次复制（⌘C, ⌘C）即可翻译"
     @Published var latestResult: TranslationResult?
@@ -31,11 +37,18 @@ final class AppModel: ObservableObject {
     @Published var currentDailyWordIndex: Int = 0
     @Published var todayWordDeckCount: Int = 0
     @Published var todayMasteredWordCount: Int = 0
-    @Published var todayDailyWordTarget: Int = AppModel.dailyWordQuota
+    @Published var todayDailyWordTarget: Int = AppModel.dailyWordBudget
     @Published var totalMasteredWordCount: Int = 0
     @Published var allMasteredWords: [String] = []
     @Published var masteredWordItems: [MasteredWordListItem] = []
     @Published var todayReviewCount: Int = 0
+    /// Reviews due today but held back by the daily cap (drains on later days).
+    @Published var reviewBacklogCount: Int = 0
+    /// Whether today is a rest day per the user's study-day schedule.
+    @Published var isTodayRestDay: Bool = false
+    /// Study-day schedule + daily ceiling, mirrored for the Settings UI.
+    @Published var studyDaysSelection: Set<Int> = LearningSchedule.defaultStudyDays
+    @Published var dailyWordBudgetSetting: Int = LearningSchedule.defaultDailyBudget
 
     // MARK: - 会议口语句块（学习路线 · 关卡1）
     @Published var meetingPhraseCards: [MeetingPhraseCard] = []
@@ -44,6 +57,7 @@ final class AppModel: ObservableObject {
     @Published var meetingPhraseTodayMasteredCount: Int = 0
     @Published var meetingPhraseTotalMasteredCount: Int = 0
     @Published var meetingPhraseReviewCount: Int = 0
+    @Published var meetingPhraseReviewBacklogCount: Int = 0
 
     // MARK: - 中译英产出 + AI 批改（学习路线 · 关卡3）
     @Published var currentDrill: ProductionDrill?
@@ -196,17 +210,24 @@ final class AppModel: ObservableObject {
         self.selectedTextService = selectedTextService
         self.translationService = translationService
         self.defaults = defaults
+        self.studyDaysSelection = LearningSchedule.studyDays(defaults: defaults)
+        self.dailyWordBudgetSetting = LearningSchedule.dailyBudget(defaults: defaults)
+        let studyDaysProvider: () -> Set<Int> = { LearningSchedule.studyDays(defaults: defaults) }
         self.wordCarouselStore = WordCarouselStore(
             defaults: defaults,
             coreWords: CommonWordBank.coreWords,
             extendedWords: CommonWordBank.extendedWords,
-            dailyQuota: Self.dailyWordQuota
+            dailyBudgetProvider: { LearningSchedule.dailyBudget(defaults: defaults) },
+            newWordGroupStep: Self.newWordGroupStep,
+            studyDaysProvider: studyDaysProvider
         )
         self.meetingPhraseStore = WordCarouselStore(
             defaults: defaults,
             coreWords: MeetingPhraseBank.allIDs,
             extendedWords: [],
-            dailyQuota: 6,
+            dailyBudgetProvider: { Self.meetingPhraseBudget },
+            newWordGroupStep: 6,
+            studyDaysProvider: studyDaysProvider,
             stateKey: "meetingPhrase.state.v1"
         )
 
@@ -423,12 +444,17 @@ final class AppModel: ObservableObject {
         let base = DailyWordProgress.statusText(
             masteredToday: todayMasteredWordCount,
             quota: todayDailyWordTarget,
-            hasAvailableCard: currentDailyWordCard != nil
+            hasAvailableCard: currentDailyWordCard != nil,
+            isRestDay: isTodayRestDay
         )
+        var text = base
         if todayReviewCount > 0 {
-            return "\(base) · 复习 \(todayReviewCount)"
+            text += " · 复习 \(todayReviewCount)"
         }
-        return base
+        if reviewBacklogCount > 0 {
+            text += "（还有 \(reviewBacklogCount) 待后续）"
+        }
+        return text
     }
 
     var hasCompletedDailyWordTarget: Bool {
@@ -436,7 +462,26 @@ final class AppModel: ObservableObject {
     }
 
     var dailyWordGroupSize: Int {
-        Self.dailyWordQuota
+        Self.newWordGroupStep
+    }
+
+    /// Toggle a weekday (Calendar convention, Sunday = 1) as a study day and
+    /// re-plan today's decks. Only affects future scheduling; already-scheduled
+    /// review dates keep their day.
+    func setStudyDay(_ weekday: Int, isStudyDay: Bool) {
+        var days = studyDaysSelection
+        if isStudyDay { days.insert(weekday) } else { days.remove(weekday) }
+        studyDaysSelection = days
+        LearningSchedule.setStudyDays(days, defaults: defaults)
+        refreshWordCarouselIfNeeded()
+        refreshMeetingPhrasesIfNeeded()
+    }
+
+    /// Update the daily total ceiling and re-plan today's word deck.
+    func setDailyWordBudget(_ value: Int) {
+        LearningSchedule.setDailyBudget(value, defaults: defaults)
+        dailyWordBudgetSetting = LearningSchedule.dailyBudget(defaults: defaults)
+        refreshWordCarouselIfNeeded()
     }
 
     var currentMeetingPhraseCard: MeetingPhraseCard? {
@@ -450,11 +495,14 @@ final class AppModel: ObservableObject {
     var meetingPhraseProgressText: String {
         guard !meetingPhraseCards.isEmpty else { return "今日句块已全部掌握" }
         let shownIndex = min(currentMeetingPhraseIndex, meetingPhraseCards.count - 1) + 1
-        let base = "今日句块 \(shownIndex)/\(meetingPhraseCards.count)"
+        var text = "今日句块 \(shownIndex)/\(meetingPhraseCards.count)"
         if meetingPhraseReviewCount > 0 {
-            return "\(base) · 复习 \(meetingPhraseReviewCount)"
+            text += " · 复习 \(meetingPhraseReviewCount)"
         }
-        return base
+        if meetingPhraseReviewBacklogCount > 0 {
+            text += "（还有 \(meetingPhraseReviewBacklogCount) 待后续）"
+        }
+        return text
     }
 
     /// Total chunks in the bank, for the "路线进度" line.
@@ -498,9 +546,18 @@ final class AppModel: ObservableObject {
         )
     }
 
+    private func isStudyDay(_ date: Date) -> Bool {
+        LearningSchedule.isStudyDay(date, calendar: calendar, defaults: defaults)
+    }
+
     /// Consecutive days of learning activity ending at today (or yesterday if
     /// today has no activity yet — we don't want to show "streak broken" at
     /// 8am just because the day just started).
+    ///
+    /// Rest days are transparent: a rest day with no activity neither breaks nor
+    /// counts toward the streak (so a Mon–Thu learner keeps their streak across
+    /// the weekend); a day with activity always counts; a *study* day with no
+    /// activity breaks the streak.
     var currentStreakDays: Int {
         let counts = dailyActivityCounts
         let now = Date()
@@ -519,15 +576,22 @@ final class AppModel: ObservableObject {
         }
 
         var streak = 0
-        while true {
+        var iterations = 0
+        // Absolute iteration cap (not streak-based): rest days don't increment
+        // the streak, so a streak-based bound couldn't guarantee termination for
+        // an all-rest configuration.
+        while iterations < 3650 {
+            iterations += 1
             let key = Self.dayKey(for: cursor, calendar: calendar)
-            guard (counts[key] ?? 0) > 0 else { break }
-            streak += 1
+            let hasActivity = (counts[key] ?? 0) > 0
+            if hasActivity {
+                streak += 1
+            } else if isStudyDay(cursor) {
+                break
+            }
+            // else: rest day with no activity → skip without breaking.
             guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
             cursor = prev
-            // Hard cap to avoid any pathological data sending us into an
-            // infinite loop; real streaks are never multi-year on a personal app.
-            if streak >= 3650 { break }
         }
         return streak
     }
@@ -567,6 +631,8 @@ final class AppModel: ObservableObject {
         allMasteredWords = snapshot.masteredWords.sorted()
         refreshMasteredWordItems(from: snapshot.masteredRecords)
         todayReviewCount = snapshot.reviewDueWords.count
+        reviewBacklogCount = snapshot.reviewBacklogCount
+        isTodayRestDay = snapshot.isRestDay
 
         // Combine review-due words (front) with fresh today words. They can't
         // overlap by construction (review pool is mastered, today pool excludes
@@ -743,6 +809,7 @@ final class AppModel: ObservableObject {
         meetingPhraseTodayMasteredCount = snapshot.todayMasteredCount
         meetingPhraseTotalMasteredCount = snapshot.totalMasteredCount
         meetingPhraseReviewCount = snapshot.reviewDueWords.count
+        meetingPhraseReviewBacklogCount = snapshot.reviewBacklogCount
 
         // Review-due chunks ride at the front, then today's fresh chunks.
         var seen: Set<String> = []
@@ -1062,25 +1129,36 @@ final class AppModel: ObservableObject {
     private func showDesktopDailyWordInvite() {
         guard translationPresentationMode == .floating else { return }
 
+        // Pending cards (reviews or new words) come first, so reviews still get
+        // invited even when the new-word target is already met (or 0 on a rest
+        // day, where `hasCompletedDailyWordTarget` would otherwise be true).
+        if let card = currentDailyWordCard {
+            popoverController.presentDailyWordInvite(card: card)
+            return
+        }
+
+        if isTodayRestDay {
+            popoverController.presentFeedback(
+                title: "今天是休息日",
+                message: "好好休息～到期的复习会顺延到学习日"
+            )
+            return
+        }
+
         if hasCompletedDailyWordTarget {
             popoverController.presentDailyWordCompletion(
                 message: DailyWordProgress.completionMessage(
                     quota: todayDailyWordTarget,
-                    groupSize: Self.dailyWordQuota
+                    groupSize: Self.newWordGroupStep
                 )
             )
             return
         }
 
-        guard let card = currentDailyWordCard else {
-            popoverController.presentFeedback(
-                title: "今日单词",
-                message: "今天暂无可学习单词"
-            )
-            return
-        }
-
-        popoverController.presentDailyWordInvite(card: card)
+        popoverController.presentFeedback(
+            title: "今日单词",
+            message: "今天暂无可学习单词"
+        )
     }
 
     private func completeDesktopDailyWord(_ card: DesktopWordCard) {

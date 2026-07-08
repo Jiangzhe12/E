@@ -3,7 +3,11 @@ import Foundation
 struct WordCarouselSnapshot {
     let dayKey: String
     let todayWords: [String]
+    /// Review-due words after the daily cap has been applied.
     let reviewDueWords: [String]
+    /// Words that are due for review today but held back by the daily cap; they
+    /// surface on later days as the backlog drains. Drives the "还有 N 待后续" hint.
+    let reviewBacklogCount: Int
     let masteredWords: Set<String>
     let masteredRecords: [MasteredWordRecord]
     let dailyTarget: Int
@@ -11,6 +15,8 @@ struct WordCarouselSnapshot {
     let todayMasteredCount: Int
     let totalMasteredCount: Int
     let graduatedWords: Set<String>
+    /// Whether today is a rest day per the user's study-day schedule.
+    let isRestDay: Bool
 }
 
 struct MasteredWordRecord: Identifiable {
@@ -86,6 +92,12 @@ final class WordCarouselStore {
         /// Words the user explicitly added from a lookup. They stay in the
         /// daily deck (beyond the normal quota) until mastered.
         var customWords: [String]
+        /// Day-key ("YYYY-MM-DD") the review counter belongs to, and how many
+        /// reviews have been answered on that day. Together they cap reviews per
+        /// day without scanning records (survives the 5000-record trim) and let
+        /// the backlog drain across days.
+        var reviewsAnsweredDayKey: String
+        var reviewsAnsweredCount: Int
 
         init(
             dayKey: String,
@@ -93,7 +105,9 @@ final class WordCarouselStore {
             masteredWords: [String],
             masteryRecords: [MasteryRecord],
             dailyTarget: Int,
-            customWords: [String] = []
+            customWords: [String] = [],
+            reviewsAnsweredDayKey: String = "",
+            reviewsAnsweredCount: Int = 0
         ) {
             self.dayKey = dayKey
             self.todayWords = todayWords
@@ -101,6 +115,8 @@ final class WordCarouselStore {
             self.masteryRecords = masteryRecords
             self.dailyTarget = dailyTarget
             self.customWords = customWords
+            self.reviewsAnsweredDayKey = reviewsAnsweredDayKey
+            self.reviewsAnsweredCount = reviewsAnsweredCount
         }
 
         enum CodingKeys: String, CodingKey {
@@ -110,6 +126,8 @@ final class WordCarouselStore {
             case masteryRecords
             case dailyTarget
             case customWords
+            case reviewsAnsweredDayKey
+            case reviewsAnsweredCount
         }
 
         init(from decoder: Decoder) throws {
@@ -121,13 +139,26 @@ final class WordCarouselStore {
             dailyTarget = try c.decodeIfPresent(Int.self, forKey: .dailyTarget) ?? 0
             // Pre-customWords states won't have this key.
             customWords = try c.decodeIfPresent([String].self, forKey: .customWords) ?? []
+            // Pre-daily-budget states won't have these keys.
+            reviewsAnsweredDayKey = try c.decodeIfPresent(String.self, forKey: .reviewsAnsweredDayKey) ?? ""
+            reviewsAnsweredCount = try c.decodeIfPresent(Int.self, forKey: .reviewsAnsweredCount) ?? 0
         }
     }
 
     private let defaults: UserDefaults
     private let coreWords: [String]
     private let extendedWords: [String]
-    private let dailyQuota: Int
+    /// Total items surfaced per day (reviews + new words). Reviews are
+    /// prioritized up to this ceiling; new words fill whatever budget is left.
+    /// Read via a closure so a settings change takes effect without rebuilding.
+    private let dailyBudgetProvider: () -> Int
+    private var dailyBudget: Int { max(1, dailyBudgetProvider()) }
+    /// How many new words "学习下一组" adds when the user asks for more beyond
+    /// the automatic daily plan.
+    private let newWordGroupStep: Int
+    /// The user's study weekdays (Calendar convention, Sunday = 1). Read via a
+    /// closure so runtime setting changes take effect without rebuilding.
+    private let studyDaysProvider: () -> Set<Int>
     private let dateProvider: () -> Date
     private let calendar: Calendar
     private let stateKey: String
@@ -136,7 +167,9 @@ final class WordCarouselStore {
         defaults: UserDefaults,
         coreWords: [String],
         extendedWords: [String],
-        dailyQuota: Int = 20,
+        dailyBudgetProvider: @escaping () -> Int = { 40 },
+        newWordGroupStep: Int = 20,
+        studyDaysProvider: @escaping () -> Set<Int> = { Set(1...7) },
         dateProvider: @escaping () -> Date = Date.init,
         calendar: Calendar = .current,
         stateKey: String = "wordCarousel.state.v1"
@@ -144,28 +177,83 @@ final class WordCarouselStore {
         self.defaults = defaults
         self.coreWords = Self.uniqueWords(from: coreWords)
         self.extendedWords = Self.uniqueWords(from: extendedWords)
-        self.dailyQuota = max(1, dailyQuota)
+        self.dailyBudgetProvider = dailyBudgetProvider
+        self.newWordGroupStep = max(1, newWordGroupStep)
+        self.studyDaysProvider = studyDaysProvider
         self.dateProvider = dateProvider
         self.calendar = calendar
         self.stateKey = stateKey
+    }
+
+    // MARK: - Study-day helpers
+
+    private func isStudyDay(_ date: Date) -> Bool {
+        let days = studyDaysProvider()
+        guard !days.isEmpty else { return true }
+        return days.contains(calendar.component(.weekday, from: date))
+    }
+
+    /// Roll a candidate review date forward to the next study day. No-op when
+    /// every day is a study day. A 14-day safety cap guarantees termination.
+    private func rolledToStudyDay(_ date: Date) -> Date {
+        let days = studyDaysProvider()
+        guard !days.isEmpty, days.count < 7 else { return date }
+        var candidate = date
+        var guardCount = 0
+        while !isStudyDay(candidate), guardCount < 14 {
+            candidate = calendar.date(byAdding: .day, value: 1, to: candidate)
+                ?? candidate.addingTimeInterval(86_400)
+            guardCount += 1
+        }
+        return candidate
     }
 
     func snapshot() -> WordCarouselSnapshot {
         var state = loadState()
         let now = dateProvider()
         let todayKey = dayKey(for: now)
+        let isRestDay = !isStudyDay(now)
         let masteredSet = Set(state.masteredWords)
         let unavailableWords = unavailableWords(in: state)
 
+        // Words due for review today, compared at DAY granularity so the due
+        // pool is stable for the whole day (records keep the time-of-day they
+        // were scheduled at; an instant comparison would let items cross their
+        // due-time mid-day and break the per-day cap). Oldest-due first.
+        let today = calendar.startOfDay(for: now)
+        let duePool: [MasteryRecord] = state.masteryRecords
+            .filter { !$0.isGraduated && calendar.startOfDay(for: $0.nextReviewDue) <= today }
+            .sorted { lhs, rhs in
+                if lhs.nextReviewDue != rhs.nextReviewDue { return lhs.nextReviewDue < rhs.nextReviewDue }
+                if lhs.masteredAt != rhs.masteredAt { return lhs.masteredAt < rhs.masteredAt }
+                return lhs.word < rhs.word
+            }
+
+        // Reviews answered so far today. `answered + duePool.count` is the count
+        // of "reviews that were due at some point today" and stays constant as
+        // the user answers (each answer moves one item out of the pool), so the
+        // reservation is stable all day.
+        let answeredToday = state.reviewsAnsweredDayKey == todayKey ? state.reviewsAnsweredCount : 0
+        let reviewsReserved = min(answeredToday + duePool.count, dailyBudget)
+        let reviewsShownCount = max(0, reviewsReserved - answeredToday)
+        let reviewDueWords = Array(duePool.prefix(reviewsShownCount)).map { $0.word }
+        let reviewBacklogCount = duePool.count - reviewDueWords.count
+
+        // New words fill the budget left after reviews (0 on rest days). The
+        // deck target holds any user expansion via "学习下一组" (max(...)).
+        let newTargetBase = isRestDay ? 0 : max(0, dailyBudget - reviewsReserved)
+
         if state.dayKey != todayKey {
             state.dayKey = todayKey
-            state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(
-                dayKey: todayKey,
-                unavailableWords: unavailableWords
-            )
+            state.dailyTarget = newTargetBase
+            state.todayWords = isRestDay
+                ? []
+                : buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords, limit: newTargetBase)
         } else {
-            state.dailyTarget = max(dailyQuota, state.dailyTarget)
+            // Preserve manual expansions; never force a study-day plan below its
+            // auto target. On rest days the target stays 0 unless the user opened
+            // a group (which raises `dailyTarget` and survives via max()).
+            state.dailyTarget = max(newTargetBase, state.dailyTarget)
             state.todayWords = state.todayWords.filter { !unavailableWords.contains($0) }
             normalizeTodayWords(state: &state)
         }
@@ -180,9 +268,9 @@ final class WordCarouselStore {
         let hasCompletedDailyTarget = todayMasteredCount >= state.dailyTarget
 
         // User-added words ride along at the front of the deck, additively and
-        // regardless of the daily quota. They are kept out of the persisted
-        // `todayWords` (which stays bank-only so the quota refill stays sane)
-        // and merged into the returned deck here.
+        // regardless of the daily budget. They are kept out of the persisted
+        // `todayWords` (which stays bank-only so the refill stays sane) and
+        // merged into the returned deck here.
         let pendingCustom = state.customWords.filter { !unavailableWords.contains($0) }
         var deckSeen = Set(state.todayWords)
         var customPrefix: [String] = []
@@ -190,12 +278,6 @@ final class WordCarouselStore {
             customPrefix.append(word)
         }
         let combinedTodayWords = hasCompletedDailyTarget ? [] : customPrefix + state.todayWords
-
-        // Words whose next-review date is <= now and haven't graduated yet.
-        let reviewDueWords: [String] = state.masteryRecords
-            .filter { !$0.isGraduated && $0.nextReviewDue <= now }
-            .sorted { $0.nextReviewDue < $1.nextReviewDue }
-            .map { $0.word }
 
         let graduatedWords: Set<String> = Set(
             state.masteryRecords.filter { $0.isGraduated }.map { $0.word }
@@ -205,6 +287,7 @@ final class WordCarouselStore {
             dayKey: state.dayKey,
             todayWords: combinedTodayWords,
             reviewDueWords: reviewDueWords,
+            reviewBacklogCount: reviewBacklogCount,
             masteredWords: Set(state.masteredWords),
             masteredRecords: state.masteryRecords
                 .filter { masteredSet.contains($0.word) }
@@ -227,7 +310,8 @@ final class WordCarouselStore {
             hasCompletedDailyTarget: hasCompletedDailyTarget,
             todayMasteredCount: todayMasteredCount,
             totalMasteredCount: state.masteredWords.count,
-            graduatedWords: graduatedWords
+            graduatedWords: graduatedWords,
+            isRestDay: isRestDay
         )
     }
 
@@ -248,8 +332,9 @@ final class WordCarouselStore {
         masteredSet.insert(normalized)
         state.masteredWords = Array(masteredSet).sorted()
         let now = dateProvider()
-        let firstReviewDue = calendar.date(byAdding: .day, value: 1, to: now)
-            ?? now.addingTimeInterval(86_400)
+        let firstReviewDue = rolledToStudyDay(
+            calendar.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86_400)
+        )
         upsertMasteryRecord(
             &state,
             word: normalized,
@@ -260,9 +345,7 @@ final class WordCarouselStore {
 
         let todayKey = dayKey(for: now)
         if state.dayKey != todayKey {
-            state.dayKey = todayKey
-            state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
+            resetDay(state: &state, todayKey: todayKey)
         } else {
             state.todayWords.removeAll { $0 == normalized }
             state.customWords.removeAll { $0 == normalized }
@@ -281,8 +364,9 @@ final class WordCarouselStore {
 
         var state = loadState()
         let now = dateProvider()
-        let firstReviewDue = calendar.date(byAdding: .day, value: 1, to: now)
-            ?? now.addingTimeInterval(86_400)
+        let firstReviewDue = rolledToStudyDay(
+            calendar.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86_400)
+        )
 
         upsertMasteryRecord(
             &state,
@@ -294,9 +378,7 @@ final class WordCarouselStore {
 
         let todayKey = dayKey(for: now)
         if state.dayKey != todayKey {
-            state.dayKey = todayKey
-            state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
+            resetDay(state: &state, todayKey: todayKey)
         } else {
             state.todayWords.removeAll { $0 == normalized }
             state.customWords.removeAll { $0 == normalized }
@@ -320,9 +402,7 @@ final class WordCarouselStore {
 
         let todayKey = dayKey(for: dateProvider())
         if state.dayKey != todayKey {
-            state.dayKey = todayKey
-            state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
+            resetDay(state: &state, todayKey: todayKey)
         } else {
             normalizeTodayWords(state: &state)
         }
@@ -330,18 +410,21 @@ final class WordCarouselStore {
         persistState(state)
     }
 
+    /// "学习下一组": the user explicitly asks for more new words. Adds one group
+    /// on top of today's target and refills the deck — this may push past the
+    /// daily budget on purpose (an override), and works on rest days too (that's
+    /// the "想学也可以" entry). The next `snapshot()` preserves the raised target
+    /// via `max(newTargetBase, dailyTarget)`.
     func expandTodayTarget() {
         var state = loadState()
         let now = dateProvider()
         let todayKey = dayKey(for: now)
 
         if state.dayKey != todayKey {
-            state.dayKey = todayKey
-            state.dailyTarget = dailyQuota
-            state.todayWords = buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state))
+            resetDay(state: &state, todayKey: todayKey)
         }
 
-        state.dailyTarget = max(dailyQuota, state.dailyTarget) + dailyQuota
+        state.dailyTarget = max(0, state.dailyTarget) + newWordGroupStep
         let unavailableWords = unavailableWords(in: state)
         state.todayWords.removeAll { unavailableWords.contains($0) }
         fillTodayWordsIfNeeded(state: &state, dayKey: todayKey, unavailableWords: unavailableWords)
@@ -394,12 +477,14 @@ final class WordCarouselStore {
         record.reviewStage = newStage
         if newStage < srsIntervalDays.count {
             let days = srsIntervalDays[newStage]
-            record.nextReviewDue = calendar.date(byAdding: .day, value: days, to: now)
+            let due = calendar.date(byAdding: .day, value: days, to: now)
                 ?? now.addingTimeInterval(TimeInterval(days) * 86_400)
+            record.nextReviewDue = rolledToStudyDay(due)
         } else {
             record.nextReviewDue = .distantFuture
         }
         state.masteryRecords[index] = record
+        recordReviewAnswer(state: &state, now: now)
         persistState(state)
     }
 
@@ -418,9 +503,11 @@ final class WordCarouselStore {
         let now = dateProvider()
         var record = state.masteryRecords[index]
         record.reviewStage = 0
-        record.nextReviewDue = calendar.date(byAdding: .day, value: 1, to: now)
-            ?? now.addingTimeInterval(86_400)
+        record.nextReviewDue = rolledToStudyDay(
+            calendar.date(byAdding: .day, value: 1, to: now) ?? now.addingTimeInterval(86_400)
+        )
         state.masteryRecords[index] = record
+        recordReviewAnswer(state: &state, now: now)
         persistState(state)
     }
 
@@ -439,6 +526,29 @@ final class WordCarouselStore {
         return components.day
     }
 
+    /// Reset day-scoped state on a day rollover. `dailyTarget`/`todayWords` are
+    /// provisional here (the immediately-following `snapshot()` recomputes the
+    /// full plan from the review load); on rest days we seed nothing.
+    private func resetDay(state: inout PersistedState, todayKey: String) {
+        state.dayKey = todayKey
+        let isRest = !isStudyDay(dateProvider())
+        state.dailyTarget = isRest ? 0 : dailyBudget
+        state.todayWords = isRest
+            ? []
+            : buildDailyWords(dayKey: todayKey, unavailableWords: unavailableWords(in: state), limit: dailyBudget)
+    }
+
+    /// Bump the day-keyed "reviews answered today" counter, resetting it when
+    /// the day changes. Backs the per-day review cap.
+    private func recordReviewAnswer(state: inout PersistedState, now: Date) {
+        let key = dayKey(for: now)
+        if state.reviewsAnsweredDayKey != key {
+            state.reviewsAnsweredDayKey = key
+            state.reviewsAnsweredCount = 0
+        }
+        state.reviewsAnsweredCount += 1
+    }
+
     private func normalizeTodayWords(state: inout PersistedState) {
         // Always deduplicate first, regardless of current count. Persisted state
         // could have picked up duplicates from older builds or race conditions.
@@ -448,7 +558,7 @@ final class WordCarouselStore {
         for word in state.todayWords where seen.insert(word).inserted {
             ordered.append(word)
         }
-        state.todayWords = Array(ordered.prefix(dailyQuota))
+        state.todayWords = Array(ordered.prefix(max(0, state.dailyTarget)))
     }
 
     private func fillTodayWordsIfNeeded(
@@ -458,8 +568,7 @@ final class WordCarouselStore {
     ) {
         normalizeTodayWords(state: &state)
 
-        let remainingTarget = max(0, state.dailyTarget - todayMasteredCount(in: state, now: dateProvider()))
-        let desiredActiveCount = min(dailyQuota, remainingTarget)
+        let desiredActiveCount = max(0, state.dailyTarget - todayMasteredCount(in: state, now: dateProvider()))
         guard state.todayWords.count < desiredActiveCount else { return }
 
         var seen = Set(state.todayWords)
@@ -478,17 +587,18 @@ final class WordCarouselStore {
         }
     }
 
-    private func buildDailyWords(dayKey: String, unavailableWords: Set<String>) -> [String] {
+    private func buildDailyWords(dayKey: String, unavailableWords: Set<String>, limit: Int) -> [String] {
+        guard limit > 0 else { return [] }
         let candidates = candidatePool(unavailableWords: unavailableWords)
         guard !candidates.isEmpty else { return [] }
-        return deterministicSelection(from: candidates, dayKey: dayKey, limit: min(dailyQuota, candidates.count))
+        return deterministicSelection(from: candidates, dayKey: dayKey, limit: min(limit, candidates.count))
     }
 
     private func candidatePool(unavailableWords: Set<String>) -> [String] {
         let coreAvailable = coreWords.filter { !unavailableWords.contains($0) }
         let extendedAvailable = extendedWords.filter { !unavailableWords.contains($0) && !coreWords.contains($0) }
 
-        if coreAvailable.count >= dailyQuota {
+        if coreAvailable.count >= dailyBudget {
             return coreAvailable
         }
 
@@ -553,7 +663,7 @@ final class WordCarouselStore {
                 todayWords: [],
                 masteredWords: [],
                 masteryRecords: [],
-                dailyTarget: dailyQuota
+                dailyTarget: dailyBudget
             )
         }
 
@@ -562,8 +672,10 @@ final class WordCarouselStore {
             todayWords: Self.uniqueWords(from: decoded.todayWords),
             masteredWords: Self.uniqueWords(from: decoded.masteredWords),
             masteryRecords: decoded.masteryRecords,
-            dailyTarget: max(dailyQuota, decoded.dailyTarget),
-            customWords: Self.uniqueWords(from: decoded.customWords)
+            dailyTarget: max(0, decoded.dailyTarget),
+            customWords: Self.uniqueWords(from: decoded.customWords),
+            reviewsAnsweredDayKey: decoded.reviewsAnsweredDayKey,
+            reviewsAnsweredCount: decoded.reviewsAnsweredCount
         )
     }
 
