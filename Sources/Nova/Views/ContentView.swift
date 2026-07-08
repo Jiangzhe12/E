@@ -218,30 +218,39 @@ struct ContentView: View {
     private var detail: some View {
         VStack(spacing: 0) {
             detailTabBar
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    statusBanner
-                    switch selectedTab {
-                    case .translate:
-                        manualCard
-                        translationCard
-                    case .stats:
-                        statsOverviewCard
-                        todoStatsCard
-                        activityHeatmapCard
-                    case .words:
-                        wordLearningCard
-                    case .route:
-                        learningRouteCard
-                        meetingPhraseCard
-                        productionDrillCard
-                    case .interest:
-                        interestLearningCard
-                    case .todos:
-                        TodoRootView(model: model)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        statusBanner
+                        switch selectedTab {
+                        case .translate:
+                            manualCard
+                            translationCard
+                        case .stats:
+                            statsOverviewCard
+                            todoStatsCard
+                            activityHeatmapCard
+                        case .words:
+                            wordLearningCard
+                        case .route:
+                            learningRouteCard
+                            meetingPhraseCard
+                            productionDrillCard
+                        case .interest:
+                            interestLearningCard
+                        case .todos:
+                            TodoRootView(model: model)
+                        }
                     }
+                    .padding(24)
+                    // The todo tab (esp. the 便签 editor) should fill the visible
+                    // height rather than leaving a large blank below the card.
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: selectedTab == .todos ? proxy.size.height : nil,
+                        alignment: .topLeading
+                    )
                 }
-                .padding(24)
             }
         }
     }
@@ -486,39 +495,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if model.hasCompletedDailyWordTarget {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("今日已完成", systemImage: "checkmark.seal.fill")
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(AppColor.successDeep)
-                    Text(DailyWordProgress.completionMessage(
-                        quota: model.todayDailyWordTarget,
-                        groupSize: model.dailyWordGroupSize
-                    ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    Text(Self.timeUntilNextDailyBatchDescription())
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppColor.subtitle)
-
-                    HStack(spacing: 10) {
-                        Button {
-                            model.startNextDailyWordGroup()
-                        } label: {
-                            Label("学习下一组", systemImage: "plus.circle.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("查看累计熟悉") {
-                            openMasteredWords(scope: .all)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .insetSurface(cornerRadius: 12)
-            } else if let card = model.currentDailyWordCard {
+            if let card = model.currentDailyWordCard {
                 let isRevealed = dailyWordRevealState.isRevealed(for: card.id)
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -652,6 +629,64 @@ struct ContentView: View {
                     }
                     .buttonStyle(.bordered)
                 }
+            } else if model.isTodayRestDay {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("今天是休息日", systemImage: "moon.zzz.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(AppColor.subtitle)
+                    Text("按你的学习节奏，今天不安排新词，到期的复习也会顺延到学习日。好好休息～")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            model.startNextDailyWordGroup()
+                        } label: {
+                            Label("想学也可以（开一组）", systemImage: "plus.circle")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("查看累计熟悉") {
+                            openMasteredWords(scope: .all)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .insetSurface(cornerRadius: 12)
+            } else if model.hasCompletedDailyWordTarget {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("今日已完成", systemImage: "checkmark.seal.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(AppColor.successDeep)
+                    Text(DailyWordProgress.completionMessage(
+                        quota: model.todayDailyWordTarget,
+                        groupSize: model.dailyWordGroupSize
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    Text(Self.timeUntilNextDailyBatchDescription())
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.subtitle)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            model.startNextDailyWordGroup()
+                        } label: {
+                            Label("学习下一组", systemImage: "plus.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("查看累计熟悉") {
+                            openMasteredWords(scope: .all)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .insetSurface(cornerRadius: 12)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("今天可学习的单词已经全部熟悉")

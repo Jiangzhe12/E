@@ -1,5 +1,15 @@
 enum DailyWordProgress {
-    static func statusText(masteredToday: Int, quota: Int, hasAvailableCard: Bool) -> String {
+    static func statusText(
+        masteredToday: Int,
+        quota: Int,
+        hasAvailableCard: Bool,
+        isRestDay: Bool = false
+    ) -> String {
+        // On a rest day with no opened group, surface the rhythm instead of a
+        // misleading "今日已完成" (which the 0 quota would otherwise trigger).
+        if isRestDay && quota <= 0 {
+            return "休息日"
+        }
         if masteredToday >= quota {
             return "今日已完成"
         }

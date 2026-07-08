@@ -3,6 +3,11 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var model: AppModel
 
+    /// Monday-first display order; `weekday` follows Calendar (Sunday = 1).
+    private static let weekdayOptions: [(weekday: Int, label: String)] = [
+        (2, "一"), (3, "二"), (4, "三"), (5, "四"), (6, "五"), (7, "六"), (1, "日")
+    ]
+
     var body: some View {
         Form {
             Section("翻译设置") {
@@ -84,6 +89,39 @@ struct SettingsView: View {
                 Text("授权后 ⌘C⌘C 识别更准确，并可读取其他 App 的选中文本。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("学习节奏") {
+                Stepper(
+                    "每日总量上限：\(model.dailyWordBudgetSetting) 个",
+                    value: Binding(
+                        get: { model.dailyWordBudgetSetting },
+                        set: { model.setDailyWordBudget($0) }
+                    ),
+                    in: LearningSchedule.dailyBudgetRange,
+                    step: 5
+                )
+                Text("每天最多学这么多（复习优先，新词补满剩余名额）。复习积压超出上限时分几天摊平，新词自动让路。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("学习日")
+                        .font(.caption.weight(.semibold))
+                    HStack(spacing: 6) {
+                        ForEach(Self.weekdayOptions, id: \.weekday) { option in
+                            let isOn = model.studyDaysSelection.contains(option.weekday)
+                            Toggle(option.label, isOn: Binding(
+                                get: { isOn },
+                                set: { model.setStudyDay(option.weekday, isStudyDay: $0) }
+                            ))
+                            .toggleStyle(.button)
+                        }
+                    }
+                    Text("休息日不发新词、不算断签；复习会尽量顺延到下一个学习日。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("每日提醒") {
