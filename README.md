@@ -152,6 +152,8 @@ swiftc Sources/Nova/TodoModels.swift Sources/Nova/TodoFilter.swift Tests/TodoFil
 swiftc Sources/Nova/TodoModels.swift Sources/Nova/TodoStats.swift Tests/TodoStatsTests/main.swift -o /tmp/TodoStatsTests && /tmp/TodoStatsTests
 swiftc Sources/Nova/TodoModels.swift Sources/Nova/WeeklyReport.swift Tests/WeeklyReportTests/main.swift -o /tmp/WeeklyReportTests && /tmp/WeeklyReportTests
 swiftc Sources/Nova/TodoModels.swift Tests/TodoTemplateTests/main.swift -o /tmp/TodoTemplateTests && /tmp/TodoTemplateTests
+swiftc Sources/Nova/InlineMarkdownParser.swift Tests/InlineImageMarkdownTests/main.swift -o /tmp/InlineImageMarkdownTests && /tmp/InlineImageMarkdownTests
+swiftc Sources/Nova/AppSupport.swift Sources/Nova/AttachmentStore.swift Sources/Nova/InlineMarkdownParser.swift Sources/Nova/Views/Todo/InlineImageTextEditor.swift Tests/InlineImageCodecTests/main.swift -o /tmp/InlineImageCodecTests && /tmp/InlineImageCodecTests
 ```
 
 ---

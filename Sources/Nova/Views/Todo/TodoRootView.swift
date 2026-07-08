@@ -64,7 +64,7 @@ struct TodoRootView: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .cardSurface()
         .sheet(isPresented: $isShowingAddForm) {
             TodoFormView(model: model, editing: nil) { isShowingAddForm = false }

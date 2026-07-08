@@ -18,6 +18,7 @@ struct TodoFormView: View {
     @State private var fixPlan: String
     @State private var tags: [String]
     @State private var tagInput: String = ""
+    @State private var lightbox: LightboxImage?
 
     init(model: AppModel, editing: TodoItem?, onClose: @escaping () -> Void) {
         self.model = model
@@ -123,14 +124,17 @@ struct TodoFormView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("备注（支持 Markdown）").font(.caption).foregroundStyle(.secondary)
-                        TextEditor(text: $note)
-                            .font(.body)
-                            .frame(minHeight: 80)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                            )
+                        Text("备注（支持 Markdown，可粘贴图片）").font(.caption).foregroundStyle(.secondary)
+                        InlineImageTextEditor(
+                            text: $note,
+                            font: .systemFont(ofSize: NSFont.systemFontSize),
+                            onActivateImage: { lightbox = LightboxImage(relativePath: $0) }
+                        )
+                        .frame(minHeight: 80)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                        )
                     }
                 }
                 .padding(.horizontal, 20)
@@ -153,6 +157,9 @@ struct TodoFormView: View {
         }
         .frame(width: 420)
         .frame(minHeight: 380, maxHeight: 600)
+        .sheet(item: $lightbox) { item in
+            ImageLightboxView(relativePath: item.relativePath) { lightbox = nil }
+        }
     }
 
     private func addTag() {

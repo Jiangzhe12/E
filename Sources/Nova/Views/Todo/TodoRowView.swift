@@ -174,14 +174,13 @@ struct TodoRowView: View {
 
     @ViewBuilder
     private func noteView(_ note: String) -> some View {
-        if let attributed = try? AttributedString(
+        InlineMarkdownView(
             markdown: note,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            Text(attributed).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-        } else {
-            Text(note).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-        }
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            font: .caption,
+            foregroundStyle: AnyShapeStyle(.secondary),
+            maxImageWidth: 240
+        )
     }
 
     private var subtasksView: some View {
