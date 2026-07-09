@@ -192,8 +192,9 @@ fi
 # (Ad-hoc signing generates a new hash every build, forcing re-grant.)
 
 # Auto-install to /Applications so the user always runs the latest build.
+# Set SKIP_INSTALL=1 to build into dist/ only, without replacing /Applications.
 INSTALL_DIR="/Applications/${APP_NAME}.app"
-if [[ -d "$INSTALL_DIR" ]] || [[ -w /Applications ]]; then
+if [[ "${SKIP_INSTALL:-0}" != "1" ]] && { [[ -d "$INSTALL_DIR" ]] || [[ -w /Applications ]]; }; then
   rm -rf "$INSTALL_DIR"
   cp -R "$APP_DIR" "$INSTALL_DIR"
   echo "Installed to: $INSTALL_DIR"

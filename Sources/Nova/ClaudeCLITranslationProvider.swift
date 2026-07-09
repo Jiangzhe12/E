@@ -123,7 +123,7 @@ struct ClaudeCLITranslationProvider {
             + " --permission-mode dontAsk"
             + " --tools ''"
             + " --strict-mcp-config"
-            + " --mcp-config '{}'"
+            + " --mcp-config '{\"mcpServers\":{}}'"
             + " --model \(shellSingleQuote(model))"
             + " --append-system-prompt-file \(shellSingleQuote(promptURL.path))"
     }

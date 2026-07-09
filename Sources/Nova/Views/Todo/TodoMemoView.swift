@@ -6,6 +6,7 @@ import SwiftUI
 struct TodoMemoView: View {
     @ObservedObject var model: AppModel
     @State private var isPreviewing = false
+    @State private var lightbox: LightboxImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -31,16 +32,19 @@ struct TodoMemoView: View {
                     markdownPreview
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(minHeight: 220)
+                .frame(minHeight: 220, maxHeight: .infinity)
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.glass(0.7)))
             } else {
-                TextEditor(text: Binding(
-                    get: { model.todoMemo },
-                    set: { model.setTodoMemo($0) }
-                ))
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 220)
+                InlineImageTextEditor(
+                    text: Binding(
+                        get: { model.todoMemo },
+                        set: { model.setTodoMemo($0) }
+                    ),
+                    font: .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+                    onActivateImage: { lightbox = LightboxImage(relativePath: $0) }
+                )
+                .frame(minHeight: 220, maxHeight: .infinity)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
@@ -57,19 +61,17 @@ struct TodoMemoView: View {
                 }
             }
         }
+        .sheet(item: $lightbox) { item in
+            ImageLightboxView(relativePath: item.relativePath) { lightbox = nil }
+        }
     }
 
     @ViewBuilder
     private var markdownPreview: some View {
         if model.todoMemo.isEmpty {
             Text("（空）").font(.callout).foregroundStyle(.tertiary)
-        } else if let attributed = try? AttributedString(
-            markdown: model.todoMemo,
-            options: .init(interpretedSyntax: .full)
-        ) {
-            Text(attributed).font(.callout).textSelection(.enabled)
         } else {
-            Text(model.todoMemo).font(.callout).textSelection(.enabled)
+            InlineMarkdownView(markdown: model.todoMemo, interpretedSyntax: .full, font: .callout, maxImageWidth: 280)
         }
     }
 
